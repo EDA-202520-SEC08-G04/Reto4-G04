@@ -51,7 +51,6 @@ def load_data(catalog, filename):
 
             row = {k.strip(): v for k, v in row.items() if k is not None}
 
-            # Timestamp
             fecha_str = row["timestamp"].strip()
             try:
                 fecha = datetime.strptime(fecha_str, "%Y-%m-%d %H:%M:%S.%f")
@@ -539,10 +538,12 @@ def construir_punto_camino(camino, grafo, indice):
     if indice < lt.size(camino) - 1:
         v_next = lt.get_element(camino, indice + 1)
         info_next = G.get_vertex_information(grafo, v_next)
-        punto["dist_next"] = haversine(
-            info["lat"], info["lon"],
-            info_next["lat"], info_next["lon"]
-        )
+        vertices = grafo["vertices"]
+        nodo_v = mp.get(vertices, v)
+        adjs = nodo_v["adjacents"]
+        peso = mp.get(adjs, v_next)   
+        punto["dist_next"] = peso
+        
         
     return punto
 
