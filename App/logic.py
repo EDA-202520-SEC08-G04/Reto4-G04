@@ -655,7 +655,6 @@ def req_6(control):
 
     subredes.sort(key=lambda x: (-len(x["nodos"]), x["id"]))
 
-    # Tomar las 5 más grandes
     top5 = subredes[:5]
 
     respuesta = {
@@ -666,7 +665,6 @@ def req_6(control):
     for sub in top5:
         nodos = sub["nodos"]
 
-        # Extracción de datos geográficos
         latitudes = []
         longitudes = []
         individuos = set()
@@ -677,11 +675,9 @@ def req_6(control):
             latitudes.append(nodo_info.get("lat", "Unknown"))
             longitudes.append(nodo_info.get("lon", "Unknown"))
 
-            # Agregar grullas (evitar duplicados)
             for g in nodo_info.get("cranes", []):
                 individuos.add(g)
 
-        # Primeros y últimos 3 nodos
         primeros_3 = nodos[:3]
         ultimos_3 = nodos[-3:]
 
