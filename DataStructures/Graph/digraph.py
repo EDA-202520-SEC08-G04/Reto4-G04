@@ -7,12 +7,15 @@ def new_graph(order):
     return {'vertices':vertices,
             'num_edges':num_edges}
     
-    
-    
-def insert_vertex(my_graph, key_u, info_u):
-    mp.put(my_graph['vertices'], key_u, info_u)
-    return my_graph
 
+def insert_vertex(my_graph, key_u, info_u):
+    adjacents_map = mp.new_map(10, 0.5) 
+    vertex_node = {
+        'value': info_u,       
+        'adjacents': adjacents_map 
+    }
+    mp.put(my_graph['vertices'], key_u, vertex_node)
+    return my_graph
 
 def add_edge(my_graph, key_u, key_v, weight=1.0):
     grafo=my_graph['vertices']
@@ -92,7 +95,8 @@ def update_vertex_info(my_graph, key_u, new_info_u):
     return my_graph
 
 def get_vertex_information(my_graph, key_u):
-    graph=my_graph['vertices']
+    graph = my_graph['vertices']
     if not contains_vertex(my_graph, key_u):
-        raise Exception ('El vertice no existe') 
-    return mp.get(graph, key_u)['value']
+        raise Exception('El vertice no existe')
+    node = mp.get(graph, key_u)
+    return node['value']
