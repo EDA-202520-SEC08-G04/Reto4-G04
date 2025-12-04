@@ -249,8 +249,7 @@ def req_1(catalog, lat_origen, lon_origen, lat_destino, lon_destino, individuo_i
     if not vertices_grafo or "elements" not in vertices_grafo:
         return {"error": "No hay vértices en el grafo."}
 
-    # ------------------------------
-    # Encontrar nodos más cercanos
+
     # ------------------------------
     nodo_origen = None
     min_dist_origen = float('inf')
@@ -282,7 +281,7 @@ def req_1(catalog, lat_origen, lon_origen, lat_destino, lon_destino, individuo_i
         return {"error": "No se pudo determinar nodo origen o destino."}
 
     # ------------------------------
-    # DFS desde el nodo origen
+    # DFS
     # ------------------------------
     visitados = mp.new_map(num_elements=G.order(grafo) or 1, load_factor=0.5)
     stack = lt.new_list()
@@ -306,9 +305,6 @@ def req_1(catalog, lat_origen, lon_origen, lat_destino, lon_destino, individuo_i
     if not mp.contains(visitados, nodo_destino):
         return {"error": "No existe un camino viable entre los puntos."}
 
-    # ------------------------------
-    # Reconstruir camino origen → destino
-    # ------------------------------
     camino = lt.new_list()
     v = nodo_destino
     while v is not None:
@@ -318,9 +314,6 @@ def req_1(catalog, lat_origen, lon_origen, lat_destino, lon_destino, individuo_i
             break
         v = info_v.get('edge_from')
 
-    # ------------------------------
-    # Identificar primer nodo donde aparece el individuo
-    # ------------------------------
     primer_nodo_individuo = "Desconocido"
 
     n_camino = lt.size(camino)
@@ -342,14 +335,12 @@ def req_1(catalog, lat_origen, lon_origen, lat_destino, lon_destino, individuo_i
             tags_list = tags
             tags_size = lt.size(tags)
 
-        # Revisar si individuo está en este vértice
         if primer_nodo_individuo == "Desconocido":
             for t in tags_list["elements"]:
                 if t == individuo_id:
                     primer_nodo_individuo = vid
                     break
 
-        # Construir punto
         punto = {
             "id": vid,
             "lat": lat_v,
@@ -360,17 +351,14 @@ def req_1(catalog, lat_origen, lon_origen, lat_destino, lon_destino, individuo_i
             "dist_next": "Desconocido"
         }
 
-        # primeros 3 tags
         lim_prim = min(3, tags_size)
         for k in range(lim_prim):
             lt.add_last(punto["tags_prim"], lt.get_element(tags_list, k))
 
-        # últimos 3 tags
         ini_ult = tags_size - 3 if tags_size > 3 else 0
         for k in range(ini_ult, tags_size):
             lt.add_last(punto["tags_ult"], lt.get_element(tags_list, k))
 
-        # distancia al siguiente punto
         if i < n_camino - 1:
             sig_vid = lt.get_element(camino, i+1)
             info_sig = G.get_vertex_information(grafo, sig_vid) or {}
@@ -384,14 +372,10 @@ def req_1(catalog, lat_origen, lon_origen, lat_destino, lon_destino, individuo_i
         lt.add_last(detalles, punto)
 
     # ------------------------------
-    # primeros 5 / últimos 5
-    # ------------------------------
     limite_mostrar = 5 if n_camino >= 5 else n_camino
     primeros = lt.sub_list(detalles, 0, limite_mostrar)
     ultimos = lt.sub_list(detalles, n_camino - limite_mostrar, limite_mostrar)
 
-    # ------------------------------
-    # respuesta final
     # ------------------------------
     return {
         "primer_nodo_individuo": primer_nodo_individuo,
