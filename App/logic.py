@@ -624,7 +624,106 @@ def req_5(catalog, punto_origen, punto_destino, grafo):
     
     return answer
 
+def req_6(control):
+    """
+    Identifica las subredes hídricas (componentes conectados) dentro del grafo.
+    Usa DFS para encontrar componentes conectados.
+    """
 
+    graph = control["grafo_agua"]  
+
+    if graph is None or len(graph) == 0:
+        return {"error": "No existe un grafo hídrico cargado."}
+
+    visited = set()
+    subredes = []
+    subred_id = 1
+    for nodo in graph.keys():
+        if nodo not in visited:
+
+            # Nueva subred
+            stack = [nodo]
+            componente = []
+
+            while stack:
+                actual = stack.pop()
+
+                if actual in visited:
+                    continue
+
+                visited.add(actual)
+                componente.append(actual)
+
+                for vecino in graph[actual]["adj"]:
+                    if vecino not in visited:
+                        stack.append(vecino)
+
+            subredes.append({
+                "id": subred_id,
+                "nodos": componente
+            })
+            subred_id += 1
+
+    if len(subredes) == 0:
+        return {"error": "No se identificó ninguna subred hídrica."}
+
+    subredes.sort(key=lambda x: (-len(x["nodos"]), x["id"]))
+
+    # Tomar las 5 más grandes
+    top5 = subredes[:5]
+
+    respuesta = {
+        "total_subredes": len(subredes),
+        "subredes_top": []
+    }
+
+    for sub in top5:
+        nodos = sub["nodos"]
+
+        # Extracción de datos geográficos
+        latitudes = []
+        longitudes = []
+        individuos = set()
+
+        for n in nodos:
+            nodo_info = graph[n]
+
+            latitudes.append(nodo_info.get("lat", "Unknown"))
+            longitudes.append(nodo_info.get("lon", "Unknown"))
+
+            # Agregar grullas (evitar duplicados)
+            for g in nodo_info.get("cranes", []):
+                individuos.add(g)
+
+        # Primeros y últimos 3 nodos
+        primeros_3 = nodos[:3]
+        ultimos_3 = nodos[-3:]
+
+        coords_primeros_3 = [(graph[n]["lat"], graph[n]["lon"]) for n in primeros_3]
+        coords_ultimos_3 = [(graph[n]["lat"], graph[n]["lon"]) for n in ultimos_3]
+
+        # Grullas
+        individuos = sorted(list(individuos))
+        primeros_3_individuos = individuos[:3]
+        ultimos_3_individuos = individuos[-3:]
+
+        respuesta["subredes_top"].append({
+            "id": sub["id"],
+            "total_nodos": len(nodos),
+            "lat_min": min(latitudes),
+            "lat_max": max(latitudes),
+            "lon_min": min(longitudes),
+            "lon_max": max(longitudes),
+            "primeros_3_nodos": primeros_3,
+            "ultimos_3_nodos": ultimos_3,
+            "coords_primeros_3": coords_primeros_3,
+            "coords_ultimos_3": coords_ultimos_3,
+            "total_individuos": len(individuos),
+            "primeros_3_individuos": primeros_3_individuos,
+            "ultimos_3_individuos": ultimos_3_individuos
+        })
+
+    return respuesta
 
 # Funciones para medir tiempos de ejecucion
 
