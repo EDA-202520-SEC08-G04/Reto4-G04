@@ -1,18 +1,16 @@
 import csv
 import math
 import os
-from datetime import datetime, time
-import time 
+import sys
+from datetime import datetime
 from DataStructures.List import array_list as lt
 from DataStructures.Map import map_linear_probing as mp
-from DataStructures.Graph import digraph as G
+import DataStructures.Graph.digraph as G
+from DataStructures.Graph import dfs as dfs
 from DataStructures.Graph import dfo as df
 from DataStructures.Graph import dijkstra as dih
-from DataStructures.Graph import dfs as dfs
+import time
 def haversine(lat1, lon1, lat2, lon2):
-    """
-    Distancia Haversine en km entre dos puntos (lat, lon).
-    """
     R = 6371.0
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
@@ -23,61 +21,33 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * c
 
 
-def comparar_fecha(e1, e2):
-    """
-    Criterio de ordenamiento por timestamp ascendente.
-    """
-    return e1["timestamp"] < e2["timestamp"]
-
-
-def compara_tag(e1, e2):
-    """
-    Criterio de ordenamiento por tag y luego por timestamp.
-    """
-    if e1["tag_id"] < e2["tag_id"]:
-        return True
-    elif e1["tag_id"] > e2["tag_id"]:
-        return False
-    return e1["timestamp"] < e2["timestamp"]
-
-
-
 def new_logic():
-    """
-    Crea el catálogo para almacenar las estructuras de datos.
-    """
-    grafo_dist = G.new_graph(2000)   
-    grafo_agua = G.new_graph(2000)   
+    grafo_dist = G.new_graph(2000)
+    grafo_agua = G.new_graph(2000)
     catalog = {
         "grafo_distancia": grafo_dist,
         "grafo_agua": grafo_agua,
-        "mapa_eventos": mp.new_map(25000, 0.5),  
-        "lista_eventos": lt.new_list(),        
+        "mapa_eventos": mp.new_map(25000, 0.5),
+        "lista_eventos": lt.new_list(),
         "total_grullas": 0,
-        "total_eventos": 0
+        "total_eventos": 0,
+        "nodos_por_tag": {},
+        "posiciones_nodos": []
     }
     return catalog
 
 
 def load_data(catalog, filename):
-    """
-    Carga los datos desde el CSV, construye:
-      - lista de eventos
-      - nodos (vértices) en grafo_distancia y grafo_agua
-      - arcos entre nodos para cada grulla
-
-    No imprime nada: solo llena el catálogo.
-    """
-
     filepath = os.path.join("Data", filename)
-    lista = catalog["lista_eventos"]
 
-    mapa_tags = mp.new_map(10, 0.5)
-    total_grullas = 0
-    x=1
+    events_py = []
+    tags_vistos = set()
+
     with open(filepath, mode="r", encoding="utf-8-sig") as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
+            if row is None:
+                continue
 
             row = {k.strip(): v for k, v in row.items() if k is not None}
 
@@ -85,11 +55,8 @@ def load_data(catalog, filename):
             try:
                 fecha = datetime.strptime(fecha_str, "%Y-%m-%d %H:%M:%S.%f")
             except Exception:
-                fecha = datetime.strptime(
-                    fecha_str.split('.')[0], "%Y-%m-%d %H:%M:%S"
-                )
+                fecha = datetime.strptime(fecha_str.split('.')[0], "%Y-%m-%d %H:%M:%S")
 
-        
             dist_agua = 0.0
             raw_comment = row.get("comments", "")
             if raw_comment:
@@ -98,9 +65,10 @@ def load_data(catalog, filename):
                     try:
                         dist_agua = float(clean)
                     except ValueError:
-                        dist_agua = 0.0
+                        pass
 
             tag = row["tag-local-identifier"].strip()
+
             evento = {
                 "id": row["event-id"],
                 "lat": float(row["location-lat"]),
@@ -110,110 +78,116 @@ def load_data(catalog, filename):
                 "water_dist": dist_agua
             }
 
-            lt.add_last(lista, evento)
+            events_py.append(evento)
+            tags_vistos.add(tag)
 
+    catalog["total_grullas"] = len(tags_vistos)
+    catalog["total_eventos"] = len(events_py)
 
-            if not mp.contains(mapa_tags, tag):
-                mp.put(mapa_tags, tag, True)
-                total_grullas += 1
+    events_py.sort(key=lambda e: e["timestamp"])
 
-    catalog["total_grullas"] = total_grullas
-    catalog["total_eventos"] = lt.size(lista)
+    lista = catalog["lista_eventos"]
+    for ev in events_py:
+        lt.add_last(lista, ev)
 
-    lt.quick_sort(lista, comparar_fecha)
+    eventos_por_tag = {}
+    for ev in events_py:
+        tag = ev["tag_id"]
+        if tag not in eventos_por_tag:
+            eventos_por_tag[tag] = []
+        eventos_por_tag[tag].append(ev)
 
     grafo_dist = catalog["grafo_distancia"]
     grafo_agua = catalog["grafo_agua"]
-    mapa_eventos = catalog["mapa_eventos"]
 
+    nodos_por_id = {}
+    event_to_node = {}
+    seq_nodos_por_tag = {}
+    posiciones_nodos = []
+    nodos_por_tag = {}
 
-
-    last_node_per_tag = {} 
-
-    n = lt.size(lista)
-    for i in range(n):
-        evento = lt.get_element(lista, i)
-        tag = evento["tag_id"]
-
-        crear_nodo = True
+    for tag, eventos_tag in eventos_por_tag.items():
         nodo_actual = None
+        seq_nodos = []
 
-        if tag in last_node_per_tag:
-            nodo_actual = last_node_per_tag[tag]
-            base_lat = nodo_actual["lat"]
-            base_lon = nodo_actual["lon"]
-            base_time = nodo_actual["creation_time"]
+        for evento in eventos_tag:
+            crear_nodo = True
 
-            dist = haversine(evento["lat"], evento["lon"], base_lat, base_lon)
-            dt_h = abs(
-                (evento["timestamp"] - base_time).total_seconds()
-            ) / 3600.0
+            if nodo_actual is not None:
+                dist = haversine(
+                    evento["lat"], evento["lon"],
+                    nodo_actual["lat"], nodo_actual["lon"]
+                )
+                dt_h = abs((evento["timestamp"] - nodo_actual["creation_time"]).total_seconds()) / 3600.0
 
-            if dist < 3.0 and dt_h < 3.0:
-                crear_nodo = False
+                if dist < 3.0 and dt_h < 3.0:
+                    crear_nodo = False
 
-        if crear_nodo:
-            node_id = evento["id"]
+            if crear_nodo:
+                node_id = evento["id"]
 
-            nodo_info = {
-                "id": node_id,
-                "lat": evento["lat"],
-                "lon": evento["lon"],
-                "creation_time": evento["timestamp"],
+                nodo_info = {
+                    "id": node_id,
+                    "lat": evento["lat"],
+                    "lon": evento["lon"],
+                    "creation_time": evento["timestamp"],
+                    "events_py": [evento["id"]],
+                    "tags_py": [tag],
+                    "tags_set": {tag},
+                    "event_count": 1,
+                    "water_sum": evento["water_dist"]
+                }
 
-                # info acumulada
-                "events": lt.new_list(),  
-                "tags": lt.new_list(),    
-                "tags_set": set(),        
-                "event_count": 0,
-                "water_sum": 0.0
-            }
+                G.insert_vertex(grafo_dist, node_id, nodo_info)
+                G.insert_vertex(grafo_agua, node_id, nodo_info)
 
+                nodos_por_id[node_id] = nodo_info
+                nodo_actual = nodo_info
+                seq_nodos.append(node_id)
 
-            lt.add_last(nodo_info["events"], evento["id"])
-            nodo_info["event_count"] = 1
-            nodo_info["water_sum"] = evento["water_dist"]
-            nodo_info["tags_set"].add(tag)
-            lt.add_last(nodo_info["tags"], tag)
+                posiciones_nodos.append((evento["lat"], evento["lon"], node_id))
 
-            G.insert_vertex(grafo_dist, node_id, nodo_info)
-            G.insert_vertex(grafo_agua, node_id, nodo_info)
+                if tag not in nodos_por_tag:
+                    nodos_por_tag[tag] = []
+                nodos_por_tag[tag].append(node_id)
+            else:
+                nodo_actual["events_py"].append(evento["id"])
+                nodo_actual["event_count"] += 1
+                nodo_actual["water_sum"] += evento["water_dist"]
 
-            last_node_per_tag[tag] = nodo_info
-            nodo_actual = nodo_info
+                if tag not in nodo_actual["tags_set"]:
+                    nodo_actual["tags_set"].add(tag)
+                    nodo_actual["tags_py"].append(tag)
 
-        else:
+            event_to_node[evento["id"]] = nodo_actual["id"]
 
-            lt.add_last(nodo_actual["events"], evento["id"])
-            nodo_actual["event_count"] += 1
-            nodo_actual["water_sum"] += evento["water_dist"]
+        seq_nodos_por_tag[tag] = seq_nodos
 
-            if tag not in nodo_actual["tags_set"]:
-                nodo_actual["tags_set"].add(tag)
-                lt.add_last(nodo_actual["tags"], tag)
+    for nodo in nodos_por_id.values():
+        ev_list = lt.new_list()
+        for eid in nodo["events_py"]:
+            lt.add_last(ev_list, eid)
+        nodo["events"] = ev_list
 
-        mp.put(mapa_eventos, evento["id"], nodo_actual["id"])
+        tags_list = lt.new_list()
+        for t in nodo["tags_py"]:
+            lt.add_last(tags_list, t)
+        nodo["tags"] = tags_list
 
+    mapa_eventos = catalog["mapa_eventos"]
+    for eid, node_id in event_to_node.items():
+        mp.put(mapa_eventos, eid, node_id)
 
+    for tag, seq in seq_nodos_por_tag.items():
+        for i in range(1, len(seq)):
+            origen_id = seq[i - 1]
+            destino_id = seq[i]
 
-    lt.quick_sort(lista, compara_tag)
-
-    for i in range(1, n):
-        prev = lt.get_element(lista, i - 1)
-        curr = lt.get_element(lista, i)
-
-        if prev["tag_id"] == curr["tag_id"]:
-            origen_id = mp.get(mapa_eventos, prev["id"])
-            destino_id = mp.get(mapa_eventos, curr["id"])
-
-            if origen_id is None or destino_id is None:
-                continue
             if origen_id == destino_id:
                 continue
 
-            info_o = G.get_vertex_information(grafo_dist, origen_id)
-            info_d = G.get_vertex_information(grafo_dist, destino_id)
-
+            info_o = nodos_por_id[origen_id]
+            info_d = nodos_por_id[destino_id]
 
             w_dist = haversine(
                 info_o["lat"], info_o["lon"],
@@ -221,12 +195,14 @@ def load_data(catalog, filename):
             )
             G.add_edge(grafo_dist, origen_id, destino_id, w_dist)
 
-        
             if info_d["event_count"] > 0:
                 w_water = info_d["water_sum"] / info_d["event_count"]
             else:
                 w_water = 0.0
             G.add_edge(grafo_agua, origen_id, destino_id, w_water)
+
+    catalog["posiciones_nodos"] = posiciones_nodos
+    catalog["nodos_por_tag"] = nodos_por_tag
 
 def nodo_mas_cercano(grafo, lat, lon):
     vertices = G.vertices(grafo)  # ESTA SÍ devuelve una lista EDA
@@ -540,59 +516,6 @@ def req_5(catalog, punto_origen, punto_destino, grafo):
     
     return answer
 
-def requerimiento_1(catalog, lat_or, lon_or, lat_dest, lon_dest, grulla_id):
-    grafo = catalog["grafo_distancia"]
-    lista_eventos = catalog["lista_eventos"]
-    mapa_eventos = catalog["mapa_eventos"]
-
-    # 1. nodos más cercanos
-    nodo_origen = nodo_mas_cercano(grafo, lat_or, lon_or)
-    nodo_destino = nodo_mas_cercano(grafo, lat_dest, lon_dest)
-
-    # 2. nodos visitados por la grulla (para verificar si existe)
-    nodos_grulla = nodos_visitados_por_grulla(lista_eventos, grulla_id, mapa_eventos)
-    if nodo_origen not in nodos_grulla:
-        return {"error": f"La grulla {grulla_id} no pasó por el nodo origen."}
-
-    # 3. DFS normal
-    search = dfs.DepthFirstSearch(grafo, nodo_origen)
-
-    if not dfs.has_path_to(search, nodo_destino):
-        return {"error": "No existe un camino viable entre los puntos."}
-
-    ruta = dfs.path_to(search, nodo_destino)
-    ruta = list(ruta)  # pila → lista
-
-    # 4. calcular distancias
-    dist_total = 0
-    distancias = []
-    for i in range(len(ruta)-1):
-        A = G.get_vertex_information(grafo, ruta[i])
-        B = G.get_vertex_information(grafo, ruta[i+1])
-        d = haversine(A["lat"], A["lon"], B["lat"], B["lon"])
-        dist_total += d
-        distancias.append(d)
-
-    # 5. preparar información detallada
-    detalles = []
-    for i, vid in enumerate(ruta):
-        info = G.get_vertex_information(grafo, vid)
-        tags = [lt.get_element(info["tags"], j)
-                for j in range(1, lt.size(info["tags"])+1)]
-
-        detalles.append({
-            "id": vid,
-            "lat": info["lat"],
-            "lon": info["lon"],
-            "num_grullas": len(tags),
-            "tags_preview": tags[:3] + tags[-3:] if len(tags) > 6 else tags,
-            "dist_next": distancias[i] if i < len(distancias) else 0
-        })
-
-    return {
-        "total_subredes": len(subredes),
-        "subredes_top": subredes_ordenadas[:5]
-    }
 
 
 # Funciones para medir tiempos de ejecucion
