@@ -1,6 +1,6 @@
 import sys
 from App import logic as lg
-from tabulate import tabulate # type: ignore
+from tabulate import tabulate 
 from DataStructures.Graph import digraph as G
 from DataStructures.List import array_list as lt
 
@@ -230,8 +230,104 @@ def print_req_3(control):
     """
         Función que imprime la solución del Requerimiento 3 en consola
     """
-    # TODO: Imprimir el resultado del requerimiento 3
-    pass
+    print("\n" + "="*40)
+    print("        REQUERIMIENTO 3")
+    print("="*40)
+
+    print("\nSeleccione el grafo (nicho biológico) a analizar:")
+    print("1. Grafo por distancia de desplazamiento")
+    print("2. Grafo por distancia a fuentes hídricas")
+    opcion = input("Opción (1/2): ").strip()
+
+    if opcion == "2":
+        grafo = control["grafo_agua"]
+        tipo_grafo = "Grafo hídrico"
+    else:
+        grafo = control["grafo_distancia"]
+        tipo_grafo = "Grafo por distancia"
+
+    answer = lg.req_3(control, grafo)
+
+    if not answer["ruta_valida"]:
+        print("\nNo existe una ruta migratoria válida para el grafo seleccionado.")
+        return
+
+    print(f"\nTipo de grafo analizado: {tipo_grafo}")
+    print(f"Total de puntos en la ruta migratoria: {answer['total_puntos']}")
+    print(f"Total de individuos que usan la ruta: {answer['total_individuos']}")
+
+    headers = [
+        "Id punto",
+        "Latitud",
+        "Longitud",
+        "# individuos",
+        "3 primeros tags",
+        "3 últimos tags",
+        "Dist. al anterior",
+        "Dist. al siguiente"
+    ]
+
+    print("\n--- Primeros 5 puntos de la ruta ---")
+    tabla_primeros = []
+    primeros = answer["primeros"]
+
+    for i in range(lt.size(primeros)):
+        p = lt.get_element(primeros, i)
+
+        try:
+            dist_prev_str = f"{p['dist_prev']:.3f}"
+        except:
+            dist_prev_str = str(p["dist_prev"])
+
+        try:
+            dist_next_str = f"{p['dist_next']:.3f}"
+        except:
+            dist_next_str = str(p["dist_next"])
+
+        fila = [
+            p["id"],
+            f"{p['lat']:.5f}",
+            f"{p['lon']:.5f}",
+            p["num_individuos"],
+            lista_to_string(p["tags_prim"]),
+            lista_to_string(p["tags_ult"]),
+            dist_prev_str,
+            dist_next_str
+        ]
+        tabla_primeros.append(fila)
+
+    print(tabulate(tabla_primeros, headers=headers, tablefmt="grid"))
+
+    print("\n--- Últimos 5 puntos de la ruta ---")
+    tabla_ultimos = []
+    ultimos = answer["ultimos"]
+
+    for i in range(lt.size(ultimos)):
+        p = lt.get_element(ultimos, i)
+
+        try:
+            dist_prev_str = f"{p['dist_prev']:.3f}"
+        except:
+            dist_prev_str = str(p["dist_prev"])
+
+        try:
+            dist_next_str = f"{p['dist_next']:.3f}"
+        except:
+            dist_next_str = str(p["dist_next"])
+
+        fila = [
+            p["id"],
+            f"{p['lat']:.5f}",
+            f"{p['lon']:.5f}",
+            p["num_individuos"],
+            lista_to_string(p["tags_prim"]),
+            lista_to_string(p["tags_ult"]),
+            dist_prev_str,
+            dist_next_str
+        ]
+        tabla_ultimos.append(fila)
+
+    print(tabulate(tabla_ultimos, headers=headers, tablefmt="grid"))
 
 
 def print_req_4(control):
