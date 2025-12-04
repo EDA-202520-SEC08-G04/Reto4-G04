@@ -1,14 +1,11 @@
 import sys
 from App import logic as lg
-from tabulate import tabulate 
+from tabulate import tabulate
 from DataStructures.Graph import digraph as G
 from DataStructures.List import array_list as lt
 
 
 def new_logic():
-    """
-    Se crea una instancia del controlador
-    """
     return lg.new_logic()
 
 
@@ -27,40 +24,21 @@ def print_menu():
     print("=" * 40)
 
 
-
 def _tags_to_python_list(info):
-    """
-    Convierte info['tags'] (array_list) a lista normal de Python.
-    Si no hay 'tags', intenta usar 'tag_id'.
-    """
     tags = info.get("tags", None)
-
     if tags is not None and "elements" in tags and "size" in tags:
         res = []
         n = lt.size(tags)
         for i in range(n):
             res.append(lt.get_element(tags, i))
         return res
-
     tag_id = info.get("tag_id", None)
     if tag_id is not None:
         return [tag_id]
-
     return ["N/A"]
 
 
-def _cmp_vertex_fecha(v1, v2):
-    """
-    Criterio para ordenar vértices por fecha de creación ascendente.
-    """
-    return v1["creation_time"] < v2["creation_time"]
-
-
-
 def load_data(control):
-    """
-    Carga los datos y muestra el reporte (estadísticas + primeros/últimos 5 nodos)
-    """
     filename = input("Ingrese el nombre del archivo (Enter para default large): ")
     if not filename:
         filename = "1000_cranes_mongolia_large.csv"
@@ -70,7 +48,6 @@ def load_data(control):
     grafo = control["grafo_distancia"]
     n_nodos = G.order(grafo)
     n_arcos = G.size(grafo)
-
     n_events = control.get("total_eventos", 0)
     if n_events == 0:
         n_events = lt.size(control["lista_eventos"])
@@ -94,15 +71,13 @@ def load_data(control):
     vertices_keys = G.vertices(grafo)
     total_vertices = lt.size(vertices_keys)
 
-
-    lista_vertices_info = lt.new_list()
+    vertices_py = []
     for i in range(total_vertices):
         key = lt.get_element(vertices_keys, i)
         info = G.get_vertex_information(grafo, key)
-        lt.add_last(lista_vertices_info, info)
+        vertices_py.append(info)
 
-
-    lt.quick_sort(lista_vertices_info, _cmp_vertex_fecha)
+    vertices_py.sort(key=lambda v: v["creation_time"])
 
     headers = [
         "Identificador único",
@@ -112,27 +87,25 @@ def load_data(control):
         "Conteo de eventos"
     ]
 
-
     print("\n--- Primeros 5 Nodos ---")
     table_data_first = []
-    limite_first = 5 if total_vertices > 5 else total_vertices
+    limite_first = min(5, total_vertices)
 
     for i in range(limite_first):
-        info = lt.get_element(lista_vertices_info, i)
+        info = vertices_py[i]
         pos_str = f"({info['lat']:.5f}, {info['lon']:.5f})"
         fecha_str = str(info["creation_time"])
-        tags_py = _tags_to_python_list(info)
-
+        tags_py = info["tags_py"] if "tags_py" in info else _tags_to_python_list(info)
+        tags_py = tags_py[:10]
         table_data_first.append([
             info["id"],
             pos_str,
             fecha_str,
-            tags_py,
+            tags_py if len(tags_py) <= 5 else f"{tags_py[:5]}... (+{len(tags_py)-5})",
             info["event_count"]
         ])
 
     print(tabulate(table_data_first, headers=headers, tablefmt="grid"))
-
 
     if total_vertices > 5:
         print("\n--- Últimos 5 Nodos ---")
@@ -140,20 +113,21 @@ def load_data(control):
         start_index = total_vertices - 5
 
         for i in range(start_index, total_vertices):
-            info = lt.get_element(lista_vertices_info, i)
+            info = vertices_py[i]
             pos_str = f"({info['lat']:.5f}, {info['lon']:.5f})"
             fecha_str = str(info["creation_time"])
-            tags_py = _tags_to_python_list(info)
-
+            tags_py = info["tags_py"] if "tags_py" in info else _tags_to_python_list(info)
+            tags_py = tags_py[:10]
             table_data_last.append([
                 info["id"],
                 pos_str,
                 fecha_str,
-                tags_py,
+                tags_py if len(tags_py) <= 5 else f"{tags_py[:5]}... (+{len(tags_py)-5})",
                 info["event_count"]
             ])
 
         print(tabulate(table_data_last, headers=headers, tablefmt="grid"))
+
 
 def print_data(control, id):
     """
@@ -162,61 +136,77 @@ def print_data(control, id):
     #TODO: Realizar la función para imprimir un elemento
     pass
 
-def _convert_nodos_tabla(lista_nodos):
-    """
-    Convierte la lista de nodos del modelo al formato lista de listas
-    para que tabulate pueda imprimirla correctamente.
-    """
-    tabla = []
-    for nodo in lista_nodos:
-        row = [
-            nodo["id"],
-            nodo["lat"],
-            nodo["lon"],
-            nodo["num_grullas"],
-            ", ".join(nodo["tags_preview"]) if nodo["tags_preview"] else "Unknown",
-            f"{nodo['dist_next']:.2f}"
-        ]
-        tabla.append(row)
-    return tabla
 
 def print_req_1(control):
     """
-    Imprime el resultado del Requerimiento 1 usando tabulate.
-    El parámetro 'resultado' es el diccionario retornado por el modelo.
+    Imprime el resultado del Requerimiento 1 sin depender de _convert_nodos_tabla.
+    Se arma la tabla directamente dentro del print.
     """
-    lat_or=float(input("introduzca la latitud de origen: "))
-    lon_or=float(input("introduzca la longitud de origen: "))
-    lat_dest=float(input("introduzca la latitud de destino: "))
-    lon_dest=float(input("introduzca la longitud de destino: "))
-    grulla_id=input("introduzca ID del individuo: ")
-    resultado=lg.req_1(control,lat_or, lon_or, lat_dest, lon_dest, grulla_id)
-    
+
+    # ===== Entrada =====
+    lat_or = float(input("Introduzca la latitud de origen: "))
+    lon_or = float(input("Introduzca la longitud de origen: "))
+    lat_dest = float(input("Introduzca la latitud de destino: "))
+    lon_dest = float(input("Introduzca la longitud de destino: "))
+    grulla_id = input("Introduzca ID del individuo: ")
+
+    # ===== Llamado =====
+    resultado = lg.req_1(control, lat_or, lon_or, lat_dest, lon_dest, grulla_id)
+
     if "error" in resultado:
-        print("\n  No se pudo encontrar un camino válido:")
-        print("   →", resultado["error"])
+        print("\nNo se pudo encontrar un camino válido:")
+        print(" →", resultado["error"])
         return
 
-    print("\n====== REQUERIMIENTO 1: Camino migratorio del individuo ======\n")
+    print(f"\nPrimer nodo donde se detectó al individuo:")
+    print(f" → Nodo: {resultado.get('primer_nodo','Unknown')}")
 
-    print(f"Primer nodo donde se detectó al individuo:")
-    print(f" → Nodo: {resultado['nodo_inicio_grulla']}\n")
+    print(f"\nDistancia total del camino: {resultado['distancia_total']:.2f} km")
+    print(f"Total de puntos en la ruta: {resultado['total_puntos']}")
 
-    print(f"Distancia total del camino: {resultado['distancia_total']:.2f} km")
-    print(f"Total de puntos en la ruta: {resultado['total_puntos']}\n")
+    # Encabezados coherentes con los datos de REQ 1
+    headers = ["Nodo", "Latitud", "Longitud", "Distancia al siguiente (km)"]
 
-    print("===== Primeros 5 puntos de la ruta =====")
-    print(tabulate(_convert_nodos_tabla(resultado["primeros_5"]),
-                   headers=["Nodo", "Latitud", "Longitud", "#Grullas", "Tags (3 primeros / 3 últimos)", "Distancia al siguiente (km)"],
-                   tablefmt="grid"))
+    print("\n--- Primeros 5 puntos de la ruta ---")
+    
+    headers = ["Nodo", "Latitud", "Longitud", "# individuos", "3 primeros tags", "3 últimos tags", "Distancia al siguiente (km)"]
 
-    print("\n===== Últimos 5 puntos de la ruta =====")
-    print(tabulate(_convert_nodos_tabla(resultado["ultimos_5"]),
-                   headers=["Nodo", "Latitud", "Longitud", "#Grullas", "Tags (3 primeros / 3 últimos)", "Distancia al siguiente (km)"],
-                   tablefmt="grid"))
+    tabla_primeros = []
 
+    primeros = resultado["primeros_5"]["elements"]   # <<< ESTA ES LA LÍNEA CLAVE
+
+    for p in primeros:
+        fila = [
+            p["id"].strip(),
+            p["lat"],
+            p["lon"],
+            p["num_individuos"],
+            p["dist_next"]
+        ]
+        tabla_primeros.append(fila)
+
+    print(tabulate(tabla_primeros, headers=headers, tablefmt="grid"))
     print("\n===============================================================\n")
+    print("\n--- Últimos 5 puntos de la ruta ---")
+    
+    headers = ["Nodo", "Latitud", "Longitud", "# individuos", "3 primeros tags", "3 últimos tags", "Distancia al siguiente (km)"]
 
+    tabla_u = []
+
+    u = resultado["ultimos_5"]["elements"]   # <<< ESTA ES LA LÍNEA CLAVE
+
+    for i in u:
+        fila = [
+            i["id"].strip(),
+            i["lat"],
+            i["lon"],
+            i["num_individuos"],
+            i["dist_next"]
+        ]
+        tabla_primeros.append(fila)
+
+    print(tabulate(tabla_u, headers=headers, tablefmt="grid"))
+    print("\n===============================================================\n")
 
 def print_req_2(control):
     """
