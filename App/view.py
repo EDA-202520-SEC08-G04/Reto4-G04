@@ -27,7 +27,6 @@ def print_menu():
     print("=" * 40)
 
 
-# ----------------------- helpers de impresión ----------------------- #
 
 def _tags_to_python_list(info):
     """
@@ -36,7 +35,6 @@ def _tags_to_python_list(info):
     """
     tags = info.get("tags", None)
 
-    # Caso normal: tags es un array_list {'elements': [...], 'size': n}
     if tags is not None and "elements" in tags and "size" in tags:
         res = []
         n = lt.size(tags)
@@ -44,12 +42,10 @@ def _tags_to_python_list(info):
             res.append(lt.get_element(tags, i))
         return res
 
-    # Si no hay lista de tags pero sí un tag_id suelto
     tag_id = info.get("tag_id", None)
     if tag_id is not None:
         return [tag_id]
 
-    # Si no hay información de grullas
     return ["N/A"]
 
 
@@ -60,7 +56,6 @@ def _cmp_vertex_fecha(v1, v2):
     return v1["creation_time"] < v2["creation_time"]
 
 
-# ----------------------- vista: carga de datos ----------------------- #
 
 def load_data(control):
     """
@@ -70,10 +65,8 @@ def load_data(control):
     if not filename:
         filename = "1000_cranes_mongolia_large.csv"
 
-    # Llamada a la lógica
     lg.load_data(control, filename)
 
-    # --- 1. ESTADÍSTICAS GENERALES ---
     grafo = control["grafo_distancia"]
     n_nodos = G.order(grafo)
     n_arcos = G.size(grafo)
@@ -98,18 +91,17 @@ def load_data(control):
     print("DETALLE DE NODOS (VÉRTICES)")
     print("=" * 40)
 
-    # --- 2. OBTENER Y ORDENAR VÉRTICES POR FECHA ---
     vertices_keys = G.vertices(grafo)
     total_vertices = lt.size(vertices_keys)
 
-    # Construimos una lista con la información de cada vértice
+
     lista_vertices_info = lt.new_list()
     for i in range(total_vertices):
         key = lt.get_element(vertices_keys, i)
         info = G.get_vertex_information(grafo, key)
         lt.add_last(lista_vertices_info, info)
 
-    # Ordenar por creation_time ascendente
+
     lt.quick_sort(lista_vertices_info, _cmp_vertex_fecha)
 
     headers = [
@@ -120,7 +112,7 @@ def load_data(control):
         "Conteo de eventos"
     ]
 
-    # --- 3. TABLA PRIMEROS 5 NODOS ---
+
     print("\n--- Primeros 5 Nodos ---")
     table_data_first = []
     limite_first = 5 if total_vertices > 5 else total_vertices
@@ -141,7 +133,7 @@ def load_data(control):
 
     print(tabulate(table_data_first, headers=headers, tablefmt="grid"))
 
-    # --- 4. TABLA ÚLTIMOS 5 NODOS ---
+
     if total_vertices > 5:
         print("\n--- Últimos 5 Nodos ---")
         table_data_last = []
@@ -201,13 +193,116 @@ def print_req_4(control):
     # TODO: Imprimir el resultado del requerimiento 4
     pass
 
+def lista_to_string(lista):
+    n = lt.size(lista)
+    if n == 0:
+        return "Desconocido"
+    elems = []
+    for i in range(n):
+        elems.append(str(lt.get_element(lista, i)))
+    return ", ".join(elems)
 
 def print_req_5(control):
     """
         Función que imprime la solución del Requerimiento 5 en consola
     """
-    # TODO: Imprimir el resultado del requerimiento 5
-    pass
+
+    print("\n" + "="*40)
+    print("        REQUERIMIENTO 5")
+    print("="*40)
+
+    lat1 = float(input("Latitud del punto de origen: "))
+    lon1 = float(input("Longitud del punto de origen: "))
+    lat2 = float(input("Latitud del punto de destino: "))
+    lon2 = float(input("Longitud del punto de destino: "))
+
+    print("\nSeleccione el grafo a utilizar:")
+    print("1. Grafo por distancia de desplazamiento")
+    print("2. Grafo por distancia a fuentes hídricas")
+    opcion = input("Opción (1/2): ").strip()
+
+    if opcion == "2":
+        grafo = control["grafo_agua"]
+        tipo_grafo = "Grafo hídrico"
+    else:
+        grafo = control["grafo_distancia"]
+        tipo_grafo = "Grafo por distancia"
+
+    punto_origen = (lat1, lon1)
+    punto_destino = (lat2, lon2)
+
+    answer = lg.req_5(control, punto_origen, punto_destino, grafo)
+
+    if not answer["ruta_valida"]:
+        print("\nNo existe una ruta migratoria viable entre los puntos dados.")
+        return
+
+    print(f"\nTipo de grafo usado: {tipo_grafo}")
+    print(f"Total de puntos en la ruta: {answer['total_puntos']}")
+    print(f"Total de segmentos en la ruta: {answer['total_segmentos']}")
+
+    try:
+        costo_str = f"{answer['costo_total']:.3f}"
+    except:
+        costo_str = str(answer["costo_total"])
+    print(f"Costo total de la ruta: {costo_str}")
+
+    headers = [
+        "Id punto",
+        "Latitud",
+        "Longitud",
+        "# individuos",
+        "3 primeros tags",
+        "3 últimos tags",
+        "Dist. al siguiente"
+    ]
+
+    print("\n--- Primeros 5 puntos de la ruta ---")
+    tabla_primeros = []
+    primeros = answer["primeros"]
+    for i in range(lt.size(primeros)):
+        p = lt.get_element(primeros, i)
+        try:
+            dist_str = f"{p['dist_next']:.3f}"
+        except:
+            dist_str = str(p["dist_next"])
+
+        fila = [
+            p["id"],
+            f"{p['lat']:.5f}",
+            f"{p['lon']:.5f}",
+            p["num_individuos"],
+            lista_to_string(p["tags_prim"]),
+            lista_to_string(p["tags_ult"]),
+            dist_str
+        ]
+        tabla_primeros.append(fila)
+
+    print(tabulate(tabla_primeros, headers=headers, tablefmt="grid"))
+
+    print("\n--- Últimos 5 puntos de la ruta ---")
+    tabla_ultimos = []
+    ultimos = answer["ultimos"]
+    for i in range(lt.size(ultimos)):
+        p = lt.get_element(ultimos, i)
+        try:
+            dist_str = f"{p['dist_next']:.3f}"
+        except:
+            dist_str = str(p["dist_next"])
+
+        fila = [
+            p["id"],
+            f"{p['lat']:.5f}",
+            f"{p['lon']:.5f}",
+            p["num_individuos"],
+            lista_to_string(p["tags_prim"]),
+            lista_to_string(p["tags_ult"]),
+            dist_str
+        ]
+        tabla_ultimos.append(fila)
+
+    print(tabulate(tabla_ultimos, headers=headers, tablefmt="grid"))
+
 
 
 def print_req_6(control):

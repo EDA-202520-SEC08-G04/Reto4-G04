@@ -5,50 +5,47 @@ from DataStructures.Map import map_linear_probing as mp
 from DataStructures.Stack import stack as st
 from DataStructures.Priority_queue import priority_queue as pq
 def dijkstra(my_graph, source):
-    visited_ht = mp.new_map(num_elements=G.order(my_graph), load_factor=0.5 )
-      
-    #En este algoritmo se hace todo el mapa en esta misma funcion 
-    
-    keys_vertex=G.vertices(my_graph)
-    
-    for key in keys_vertex:
-        dis=float('inf')
-        
-        if key==source:
-            dis=0
-        mp.put(visited_ht, source, {'marked': False, 'edge_from': None, 'dist_to': dis})
-    heap=pq.new_heap()
+    visited_ht = mp.new_map(num_elements=G.order(my_graph), load_factor=0.5)
+    keys_vertex = G.vertices(my_graph)
+    INF = float('inf')
+
+    for i in range(al.size(keys_vertex)):
+        key = al.get_element(keys_vertex, i)
+        dis = 0 if key == source else INF
+        mp.put(visited_ht, key, {'marked': False, 'edge_from': None, 'dist_to': dis})
+
+    heap = pq.new_heap()
     pq.insert(heap, 0, source)
+
     while not pq.is_empty(heap):
-        u_key=pq.remove(heap)
-        
-        dis_u= mp.get(visited_ht, u_key)
-        d_u=dis_u['dist_to']   
-        
-        u_vertex=G.get_vertex(my_graph, u_key)
-        adjs=u_vertex['adjacents']
-        
-        for i in G.adjacents(my_graph, u_key):
-            weight_uv=mp.get(adjs, i)['weight']
-            
-            v_info= mp.get(visited_ht, i)
-            d_v= v_info['dist_to']
-            
-            if d_u != 'inf':
-                new_d_v=d_u+weight_uv
-                
-                if d_v == 'inf' or new_d_v<d_v:
-                    mp.put(visited_ht, i,  {'marked': True,
-                                            'edge_from': u_key,
-                                            'dist_to': new_d_v})
-                    if mp.contains(visited_ht, i):
-                        pq.improve_priority(heap, new_d_v, i)
-                    else:
-                        pq.insert(heap, new_d_v, i)
+        u_key = pq.remove(heap)
+        u_info = mp.get(visited_ht, u_key)
+        d_u = u_info['dist_to']
+
+        if d_u == INF:
+            continue
+
+        u_vertex = G.get_vertex(my_graph, u_key)
+        adjs = u_vertex['adjacents']
+        adj_keys = G.adjacents(my_graph, u_key)
+
+        for j in range(al.size(adj_keys)):
+            v_key = al.get_element(adj_keys, j)
+            weight_uv = mp.get(adjs, v_key)
+            v_info = mp.get(visited_ht, v_key)
+            d_v = v_info['dist_to']
+            new_d_v = d_u + weight_uv
+
+            if new_d_v < d_v:
+                mp.put(visited_ht, v_key, {
+                    'marked': True,
+                    'edge_from': u_key,
+                    'dist_to': new_d_v
+                })
+                pq.insert(heap, new_d_v, v_key)
+
     return visited_ht
-    
-    
-    
+
 
 def dist_to(key_v, aux_structure):
     
@@ -59,8 +56,10 @@ def dist_to(key_v, aux_structure):
 
 
 def has_path_to(key_v, aux_structure):
-    return mp.contains(aux_structure, key_v)
-
+    info = mp.get(aux_structure, key_v)
+    if info is None:
+        return False
+    return info["dist_to"] != float('inf')
 def path_to(key_v, visited_map):
     if not has_path_to(key_v, visited_map):
         return None 

@@ -2,15 +2,12 @@ import csv
 import math
 import os
 from datetime import datetime
-
+import time 
 from DataStructures.List import array_list as lt
 from DataStructures.Map import map_linear_probing as mp
 from DataStructures.Graph import digraph as G
-
-
-# ---------------------------------------------------------
-# Funciones auxiliares
-# ---------------------------------------------------------
+from DataStructures.Graph import dfo as df
+from DataStructures.Graph import dijkstra as dih
 
 def haversine(lat1, lon1, lat2, lon2):
     """
@@ -44,31 +41,23 @@ def compara_tag(e1, e2):
     return e1["timestamp"] < e2["timestamp"]
 
 
-# ---------------------------------------------------------
-# Creación del catálogo
-# ---------------------------------------------------------
 
 def new_logic():
     """
     Crea el catálogo para almacenar las estructuras de datos.
     """
-    grafo_dist = G.new_graph(2000)   # grafo de migración (distancia)
-    grafo_agua = G.new_graph(2000)   # grafo hídrico (agua promedio)
-
+    grafo_dist = G.new_graph(2000)   
+    grafo_agua = G.new_graph(2000)   
     catalog = {
         "grafo_distancia": grafo_dist,
         "grafo_agua": grafo_agua,
-        "mapa_eventos": mp.new_map(25000, 0.5),  # event-id -> id del nodo
-        "lista_eventos": lt.new_list(),          # lista de eventos crudos
+        "mapa_eventos": mp.new_map(25000, 0.5),  
+        "lista_eventos": lt.new_list(),        
         "total_grullas": 0,
         "total_eventos": 0
     }
     return catalog
 
-
-# ---------------------------------------------------------
-# Carga de datos
-# ---------------------------------------------------------
 
 def load_data(catalog, filename):
     """
@@ -79,21 +68,19 @@ def load_data(catalog, filename):
 
     No imprime nada: solo llena el catálogo.
     """
-    # -------- 1. Leer CSV y llenar lista_eventos --------
+
     filepath = os.path.join("Data", filename)
     lista = catalog["lista_eventos"]
 
-    # Para contar cuántas grullas distintas hay
     mapa_tags = mp.new_map(10, 0.5)
     total_grullas = 0
 
     with open(filepath, mode="r", encoding="utf-8-sig") as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
-            # limpiar llaves con espacios
+
             row = {k.strip(): v for k, v in row.items() if k is not None}
 
-            # timestamp
             fecha_str = row["timestamp"].strip()
             try:
                 fecha = datetime.strptime(fecha_str, "%Y-%m-%d %H:%M:%S.%f")
@@ -102,7 +89,7 @@ def load_data(catalog, filename):
                     fecha_str.split('.')[0], "%Y-%m-%d %H:%M:%S"
                 )
 
-            # distancia al agua (comments)
+        
             dist_agua = 0.0
             raw_comment = row.get("comments", "")
             if raw_comment:
@@ -126,7 +113,7 @@ def load_data(catalog, filename):
 
             lt.add_last(lista, evento)
 
-            # contar grullas distintAS
+
             if not mp.contains(mapa_tags, tag):
                 mp.put(mapa_tags, tag, True)
                 total_grullas += 1
@@ -134,23 +121,15 @@ def load_data(catalog, filename):
     catalog["total_grullas"] = total_grullas
     catalog["total_eventos"] = lt.size(lista)
 
-    # ordenar eventos globalmente por tiempo
     lt.quick_sort(lista, comparar_fecha)
 
     grafo_dist = catalog["grafo_distancia"]
     grafo_agua = catalog["grafo_agua"]
     mapa_eventos = catalog["mapa_eventos"]
 
-    # -------- 2. Construir nodos (puntos migratorios) --------
-    # Regla: por CADA grulla (tag) independiente:
-    #   - recorro sus eventos en orden temporal (lista ya está ordenada globalmente)
-    #   - si el evento está a menos de 3km y 3h del PRIMER evento del nodo actual
-    #     de esa grulla, lo agrupo en el mismo nodo.
-    #   - si no, creo un nuevo nodo.
-    #
-    # El id del nodo es el id del primer evento que cayó en ese nodo.
 
-    last_node_per_tag = {}  # tag_id -> dict con info del nodo actual
+
+    last_node_per_tag = {} 
 
     n = lt.size(lista)
     for i in range(n):
@@ -171,7 +150,6 @@ def load_data(catalog, filename):
                 (evento["timestamp"] - base_time).total_seconds()
             ) / 3600.0
 
-            # misma "estancia" si cumple ambas condiciones
             if dist < 3.0 and dt_h < 3.0:
                 crear_nodo = False
 
@@ -185,21 +163,20 @@ def load_data(catalog, filename):
                 "creation_time": evento["timestamp"],
 
                 # info acumulada
-                "events": lt.new_list(),   # lista de event-id
-                "tags": lt.new_list(),     # lista de tags que pasaron por este nodo
-                "tags_set": set(),         # auxiliar para no repetir tags
+                "events": lt.new_list(),  
+                "tags": lt.new_list(),    
+                "tags_set": set(),        
                 "event_count": 0,
                 "water_sum": 0.0
             }
 
-            # primer evento del nodo
+
             lt.add_last(nodo_info["events"], evento["id"])
             nodo_info["event_count"] = 1
             nodo_info["water_sum"] = evento["water_dist"]
             nodo_info["tags_set"].add(tag)
             lt.add_last(nodo_info["tags"], tag)
 
-            # insertar vértice en ambos grafos
             G.insert_vertex(grafo_dist, node_id, nodo_info)
             G.insert_vertex(grafo_agua, node_id, nodo_info)
 
@@ -207,7 +184,7 @@ def load_data(catalog, filename):
             nodo_actual = nodo_info
 
         else:
-            # acumular evento en el nodo existente
+
             lt.add_last(nodo_actual["events"], evento["id"])
             nodo_actual["event_count"] += 1
             nodo_actual["water_sum"] += evento["water_dist"]
@@ -216,12 +193,9 @@ def load_data(catalog, filename):
                 nodo_actual["tags_set"].add(tag)
                 lt.add_last(nodo_actual["tags"], tag)
 
-        # mapear event-id -> id del nodo
         mp.put(mapa_eventos, evento["id"], nodo_actual["id"])
 
-    # -------- 3. Construir arcos (migración e hídrico) --------
-    # Reordenamos los eventos por (tag, timestamp) para recorrer
-    # cada grulla en orden temporal y conectar los nodos que visita.
+
 
     lt.quick_sort(lista, compara_tag)
 
@@ -241,14 +215,14 @@ def load_data(catalog, filename):
             info_o = G.get_vertex_information(grafo_dist, origen_id)
             info_d = G.get_vertex_information(grafo_dist, destino_id)
 
-            # peso por distancia (grafo de migración)
+
             w_dist = haversine(
                 info_o["lat"], info_o["lon"],
                 info_d["lat"], info_d["lon"]
             )
             G.add_edge(grafo_dist, origen_id, destino_id, w_dist)
 
-            # peso por agua promedio en el nodo destino (grafo hídrico)
+        
             if info_d["event_count"] > 0:
                 w_water = info_d["water_sum"] / info_d["event_count"]
             else:
@@ -271,29 +245,221 @@ def req_2(catalog):
     # TODO: Modificar el requerimiento 2
     pass
 
+def cmp_tags(a, b):
+    if a == b:
+        return 0
+    return 1
+def construir_info_punto(orden, grafo, indice):
+    v = lt.get_element(orden, indice)
+    info = G.get_vertex_information(grafo, v)
 
-def req_3(catalog):
+    punto = {
+        "id": v,
+        "lat": info["lat"],
+        "lon": info["lon"],
+        "num_individuos": 0,
+        "tags_prim": lt.new_list(),
+        "tags_ult": lt.new_list(),
+        "dist_prev": "Desconocido",
+        "dist_next": "Desconocido"
+    }
+    tags = info["tags"]
+    n_tags = lt.size(tags)
+    punto["num_individuos"] = n_tags
+
+
+    limite_prim = 3
+    if n_tags < 3:
+        limite_prim = n_tags
+    for i in range(limite_prim):
+        lt.add_last(punto["tags_prim"], lt.get_element(tags, i))
+
+
+    inicio_ult = 0
+    if n_tags > 3:
+        inicio_ult = n_tags - 3
+    for i in range(inicio_ult, n_tags):
+        lt.add_last(punto["tags_ult"], lt.get_element(tags, i))
+
+    if indice > 0:
+        v_prev = lt.get_element(orden, indice-1)
+        info_prev = G.get_vertex_information(grafo, v_prev)
+        punto["dist_prev"] = haversine(
+            info["lat"], info["lon"],
+            info_prev["lat"], info_prev["lon"]
+        )
+
+    if indice < lt.size(orden) - 1:
+        v_next = lt.get_element(orden, indice+1)
+        info_next = G.get_vertex_information(grafo, v_next)
+        punto["dist_next"] = haversine(
+            info["lat"], info["lon"],
+            info_next["lat"], info_next["lon"]
+        )
+
+    return punto
+def req_3(catalog, grafo):
     """
     Retorna el resultado del requerimiento 3
     """
-    # TODO: Modificar el requerimiento 3
-    pass
+    answer = {
+        "total_puntos": 0,
+        "total_individuos": 0,
+        "primeros": lt.new_list(),  
+        "ultimos": lt.new_list(),    
+        "ruta_valida": True
+    }
 
+    orden = df.topological_sort(grafo)
+    n = lt.size(orden)
 
+  
+    if n == 0:
+        answer["ruta_valida"] = False
+        return answer
+
+   
+    answer["total_puntos"] = n
+
+  
+    vertices = G.vertices(grafo)
+    individuos = lt.new_list()
+
+    for i in range(lt.size(vertices)):
+        v = lt.get_element(vertices, i)
+        info = G.get_vertex_information(grafo, v)
+        tags = info["tags"]
+
+        for j in range(lt.size(tags)):
+            tg = lt.get_element(tags, j)
+            if lt.is_present(individuos, tg, cmp_tags) == -1:
+                lt.add_last(individuos, tg)
+
+    answer["total_individuos"] = lt.size(individuos)
+    limite_prim = 5
+    if n < 5:
+        limite_prim = n
+    for i in range(limite_prim):
+        info_p = construir_info_punto(orden, grafo, i)
+        lt.add_last(answer["primeros"], info_p)
+    inicio_ult = 0
+    if n > 5:
+        inicio_ult = n - 5
+    for i in range(inicio_ult, n):
+        info_p = construir_info_punto(orden, grafo, i)
+        lt.add_last(answer["ultimos"], info_p)
+
+    return answer
 def req_4(catalog):
+    
     """
     Retorna el resultado del requerimiento 4
     """
     # TODO: Modificar el requerimiento 4
     pass
+def construir_punto_camino(camino, grafo, indice):
+    v = lt.get_element(camino, indice)
+    info = G.get_vertex_information(grafo, v)
+    
+    punto = {
+        "id": v,
+        "lat": info["lat"],
+        "lon": info["lon"],
+        "num_individuos": 0,
+        "tags_prim": lt.new_list(),
+        "tags_ult": lt.new_list(),
+        "dist_next": "Desconocido"
+    }
+    
+    tags = info["tags"]
+    n_tags = lt.size(tags)
+    punto["num_individuos"] = n_tags
+    
+    if n_tags >= 3:
+        limite_prim = 3
+    else:
+        limite_prim = n_tags
+    for i in range(limite_prim):
+        lt.add_last(punto["tags_prim"], lt.get_element(tags, i))
+    
+    inicio_ult = 0
+    if n_tags > 3:
+        inicio_ult = n_tags - 3
+    for i in range(inicio_ult, n_tags):
+        lt.add_last(punto["tags_ult"], lt.get_element(tags, i))
+        
+    if indice < lt.size(camino) - 1:
+        v_next = lt.get_element(camino, indice + 1)
+        info_next = G.get_vertex_information(grafo, v_next)
+        punto["dist_next"] = haversine(
+            info["lat"], info["lon"],
+            info_next["lat"], info_next["lon"]
+        )
+        
+    return punto
 
 
-def req_5(catalog):
-    """
-    Retorna el resultado del requerimiento 5
-    """
-    # TODO: Modificar el requerimiento 5
-    pass
+def req_5(catalog, punto_origen, punto_destino, grafo):
+    lat1, lon1 = punto_origen
+    lat2, lon2 = punto_destino
+    
+    origen_real = None
+    min_dist = float('inf')
+    vertices = G.vertices(grafo)
+    
+    for i in range(lt.size(vertices)):
+        ele = lt.get_element(vertices, i)
+        info = G.get_vertex_information(grafo, ele)
+        d = haversine(lat1, lon1, info["lat"], info["lon"])
+        if d < min_dist:
+            min_dist = d
+            origen_real = ele
+
+    destino_real = None
+    min_dist2 = float('inf')
+    for i in range(lt.size(vertices)):
+        ele = lt.get_element(vertices, i)
+        info = G.get_vertex_information(grafo, ele)
+        d = haversine(lat2, lon2, info["lat"], info["lon"])
+        if d < min_dist2:
+            min_dist2 = d
+            destino_real = ele
+    
+    search = dih.dijkstra(grafo, origen_real)
+    
+    answer = {
+        "ruta_valida": False,
+        "total_puntos": 0,
+        "total_segmentos": 0,
+        "costo_total": 0.0,
+        "primeros": lt.new_list(),
+        "ultimos": lt.new_list()
+    }
+    
+    if dih.has_path_to(destino_real, search):
+        camino = dih.path_to(destino_real, search)
+        puntos = lt.size(camino)
+        segmento = puntos - 1
+        costo = dih.dist_to(destino_real, search)
+        
+        answer["ruta_valida"] = True
+        answer["total_puntos"] = puntos
+        answer["total_segmentos"] = segmento
+        answer["costo_total"] = costo
+        
+        limite_prim = 5 if puntos >= 5 else puntos
+        for i in range(limite_prim):
+            p = construir_punto_camino(camino, grafo, i)
+            lt.add_last(answer["primeros"], p)
+        
+        inicio_ult = 0
+        if puntos > 5:
+            inicio_ult = puntos - 5
+        for i in range(inicio_ult, puntos):
+            p = construir_punto_camino(camino, grafo, i)
+            lt.add_last(answer["ultimos"], p)
+    
+    return answer
 
 def req_6(catalog):
     """
