@@ -387,23 +387,24 @@ def req_3(catalog, grafo):
     answer = {
         "total_puntos": 0,
         "total_individuos": 0,
-        "primeros": lt.new_list(),  
-        "ultimos": lt.new_list(),    
+        "primeros": lt.new_list(),
+        "ultimos": lt.new_list(),
         "ruta_valida": True
     }
 
     orden = df.topological_sort(grafo)
-    n = lt.size(orden)
 
-  
+    if orden is None:
+        answer["ruta_valida"] = False
+        return answer
+
+    n = lt.size(orden)
     if n == 0:
         answer["ruta_valida"] = False
         return answer
 
-   
     answer["total_puntos"] = n
 
-  
     vertices = G.vertices(grafo)
     individuos = lt.new_list()
 
@@ -418,12 +419,14 @@ def req_3(catalog, grafo):
                 lt.add_last(individuos, tg)
 
     answer["total_individuos"] = lt.size(individuos)
+
     limite_prim = 5
     if n < 5:
         limite_prim = n
     for i in range(limite_prim):
         info_p = construir_info_punto(orden, grafo, i)
         lt.add_last(answer["primeros"], info_p)
+
     inicio_ult = 0
     if n > 5:
         inicio_ult = n - 5
@@ -432,6 +435,7 @@ def req_3(catalog, grafo):
         lt.add_last(answer["ultimos"], info_p)
 
     return answer
+
 def req_4(catalog):
     
     """

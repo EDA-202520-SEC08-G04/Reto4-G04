@@ -34,13 +34,49 @@ def depth_first_order(my_graph):
             
     return dfo
 
+def dfs_topo_cycle(my_graph, v, color, pila, ciclo_flag):
+    mp.put(color, v, 1)
+
+    adjs = G.adjacents(my_graph, v)
+    n = lt.size(adjs)
+
+    for i in range(n):
+        w = lt.get_element(adjs, i)
+
+        if not mp.contains(color, w):
+            dfs_topo_cycle(my_graph, w, color, pila, ciclo_flag)
+            if ciclo_flag["hay_ciclo"]:
+                return
+        else:
+            estado = mp.get(color, w)
+            if estado == 1:  
+                ciclo_flag["hay_ciclo"] = True
+                return
+
+    mp.put(color, v, 2)
+    stack.push(pila, v)
+
+
 def topological_sort(my_graph):
-    
-    dfo=depth_first_order(my_graph)
-    reverse=dfo["reversepost"]
-    topo=lt.new_list()
-    
-    while not stack.is_empty(reverse):
-        lt.add_last(topo, stack.pop(reverse))
-        
-    return topo
+    vertices = G.vertices(my_graph)
+    n = lt.size(vertices)
+
+    color = mp.new_map(num_elements=n, load_factor=0.5)
+    pila = stack.new_stack()
+    ciclo_flag = {"hay_ciclo": False}
+
+    for i in range(n):
+        v = lt.get_element(vertices, i)
+        if not mp.contains(color, v):
+            dfs_topo_cycle(my_graph, v, color, pila, ciclo_flag)
+            if ciclo_flag["hay_ciclo"]:
+                break
+
+    if ciclo_flag["hay_ciclo"]:
+        return None
+
+    orden = lt.new_list()
+    while not stack.is_empty(pila):
+        lt.add_last(orden, stack.pop(pila))
+
+    return orden
