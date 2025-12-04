@@ -1,14 +1,14 @@
 import csv
 import math
 import os
-from datetime import datetime
+from datetime import datetime, time
 import time 
 from DataStructures.List import array_list as lt
 from DataStructures.Map import map_linear_probing as mp
 from DataStructures.Graph import digraph as G
 from DataStructures.Graph import dfo as df
 from DataStructures.Graph import dijkstra as dih
-
+from DataStructures.Graph import dfs as dfs
 def haversine(lat1, lon1, lat2, lon2):
     """
     Distancia Haversine en km entre dos puntos (lat, lon).
@@ -74,7 +74,7 @@ def load_data(catalog, filename):
 
     mapa_tags = mp.new_map(10, 0.5)
     total_grullas = 0
-
+    x=1
     with open(filepath, mode="r", encoding="utf-8-sig") as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
@@ -101,7 +101,6 @@ def load_data(catalog, filename):
                         dist_agua = 0.0
 
             tag = row["tag-local-identifier"].strip()
-
             evento = {
                 "id": row["event-id"],
                 "lat": float(row["location-lat"]),
@@ -229,13 +228,96 @@ def load_data(catalog, filename):
                 w_water = 0.0
             G.add_edge(grafo_agua, origen_id, destino_id, w_water)
 
-def req_1(catalog):
+def nodo_mas_cercano(grafo, lat, lon):
+    vertices = G.vertices(grafo)  # ESTA SÍ devuelve una lista EDA
+    
+    best_node = None
+    best_dist = float("inf")
+
+    for i in vertices["elements"]:
+        vid = i
+        info = G.get_vertex_information(grafo, vid)
+        d = haversine(lat, lon, info["lat"], info["lon"])
+        if d < best_dist:
+            best_dist = d
+            best_node = vid
+
+    return best_node
+
+def nodos_visitados_por_grulla(lista_eventos, grulla_id, mapa_eventos):
+    nodos = lt.new_list()
+    size = lt.size(lista_eventos)
+    for i in range(0, size-1):
+        e = lt.get_element(lista_eventos, i)
+        if e["tag_id"] == grulla_id:
+            nodo = mp.get(mapa_eventos, e["id"])
+            lt.add_last(nodos,nodo)
+    return nodos
+
+def req_1(catalog, lat_or, lon_or, lat_dest, lon_dest, grulla_id):
 
     """
     Retorna el resultado del requerimiento 1
     """
-    # TODO: Modificar el requerimiento 1
-    pass
+    grafo = catalog["grafo_distancia"]
+    lista_eventos = catalog["lista_eventos"]
+    mapa_eventos = catalog["mapa_eventos"]
+
+    # 1. nodos más cercanos
+    nodo_origen = nodo_mas_cercano(grafo, lat_or, lon_or)
+    nodo_destino = nodo_mas_cercano(grafo, lat_dest, lon_dest)
+
+    # 2. nodos visitados por la grulla (para verificar si existe)
+    nodos_grulla = nodos_visitados_por_grulla(lista_eventos, grulla_id, mapa_eventos)
+    if nodo_origen not in nodos_grulla["elements"]:
+        return {"error": f"La grulla {grulla_id} no pasó por el nodo origen."}
+
+    # 3. DFS normal
+    
+    search = G.contains_vertex(grafo, nodo_origen)
+    print("--------------")
+    print(grafo)
+    print("--------------")
+    if not dfs.has_path_to( str(nodo_destino),grafo):
+        
+        return {"error": "No existe un camino viable entre los puntos."}
+
+    ruta = dfs.path_to(search, nodo_destino)
+    ruta = list(ruta)  # pila → lista
+
+    # 4. calcular distancias
+    dist_total = 0
+    distancias = []
+    for i in range(len(ruta)-1):
+        A = G.get_vertex_information(grafo, ruta[i])
+        B = G.get_vertex_information(grafo, ruta[i+1])
+        d = haversine(A["lat"], A["lon"], B["lat"], B["lon"])
+        dist_total += d
+        distancias.append(d)
+
+    # 5. preparar información detallada
+    detalles = []
+    for i, vid in enumerate(ruta):
+        info = G.get_vertex_information(grafo, vid)
+        tags = [lt.get_element(info["tags"], j)
+                for j in range(1, lt.size(info["tags"])+1)]
+
+        detalles.append({
+            "id": vid,
+            "lat": info["lat"],
+            "lon": info["lon"],
+            "num_grullas": len(tags),
+            "tags_preview": tags[:3] + tags[-3:] if len(tags) > 6 else tags,
+            "dist_next": distancias[i] if i < len(distancias) else 0
+        })
+
+    return {
+        "nodo_inicio_grulla": nodos_grulla[0],  # primer punto migratorio real de la grulla
+        "distancia_total": dist_total,
+        "total_puntos": len(ruta),
+        "primeros_5": detalles[:5],
+        "ultimos_5": detalles[-5:]
+    }
 
 
 def req_2(catalog):
@@ -461,13 +543,62 @@ def req_5(catalog, punto_origen, punto_destino, grafo):
     
     return answer
 
-def req_6(catalog):
-    """
-    Retorna el resultado del requerimiento 6
-    """
-    # TODO: Modificar el requerimiento 6
-    pass
+def requerimiento_1(catalog, lat_or, lon_or, lat_dest, lon_dest, grulla_id):
+    grafo = catalog["grafo_distancia"]
+    lista_eventos = catalog["lista_eventos"]
+    mapa_eventos = catalog["mapa_eventos"]
 
+    # 1. nodos más cercanos
+    nodo_origen = nodo_mas_cercano(grafo, lat_or, lon_or)
+    nodo_destino = nodo_mas_cercano(grafo, lat_dest, lon_dest)
+
+    # 2. nodos visitados por la grulla (para verificar si existe)
+    nodos_grulla = nodos_visitados_por_grulla(lista_eventos, grulla_id, mapa_eventos)
+    if nodo_origen not in nodos_grulla:
+        return {"error": f"La grulla {grulla_id} no pasó por el nodo origen."}
+
+    # 3. DFS normal
+    search = dfs.DepthFirstSearch(grafo, nodo_origen)
+
+    if not dfs.has_path_to(search, nodo_destino):
+        return {"error": "No existe un camino viable entre los puntos."}
+
+    ruta = dfs.path_to(search, nodo_destino)
+    ruta = list(ruta)  # pila → lista
+
+    # 4. calcular distancias
+    dist_total = 0
+    distancias = []
+    for i in range(len(ruta)-1):
+        A = G.get_vertex_information(grafo, ruta[i])
+        B = G.get_vertex_information(grafo, ruta[i+1])
+        d = haversine(A["lat"], A["lon"], B["lat"], B["lon"])
+        dist_total += d
+        distancias.append(d)
+
+    # 5. preparar información detallada
+    detalles = []
+    for i, vid in enumerate(ruta):
+        info = G.get_vertex_information(grafo, vid)
+        tags = [lt.get_element(info["tags"], j)
+                for j in range(1, lt.size(info["tags"])+1)]
+
+        detalles.append({
+            "id": vid,
+            "lat": info["lat"],
+            "lon": info["lon"],
+            "num_grullas": len(tags),
+            "tags_preview": tags[:3] + tags[-3:] if len(tags) > 6 else tags,
+            "dist_next": distancias[i] if i < len(distancias) else 0
+        })
+
+    return {
+        "nodo_inicio_grulla": nodos_grulla[0],  # primer punto migratorio real de la grulla
+        "distancia_total": dist_total,
+        "total_puntos": len(ruta),
+        "primeros_5": detalles[:5],
+        "ultimos_5": detalles[-5:]
+    }
 
 # Funciones para medir tiempos de ejecucion
 

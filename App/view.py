@@ -1,6 +1,6 @@
 import sys
 from App import logic as lg
-from tabulate import tabulate
+from tabulate import tabulate # type: ignore
 from DataStructures.Graph import digraph as G
 from DataStructures.List import array_list as lt
 
@@ -162,12 +162,60 @@ def print_data(control, id):
     #TODO: Realizar la función para imprimir un elemento
     pass
 
+def _convert_nodos_tabla(lista_nodos):
+    """
+    Convierte la lista de nodos del modelo al formato lista de listas
+    para que tabulate pueda imprimirla correctamente.
+    """
+    tabla = []
+    for nodo in lista_nodos:
+        row = [
+            nodo["id"],
+            nodo["lat"],
+            nodo["lon"],
+            nodo["num_grullas"],
+            ", ".join(nodo["tags_preview"]) if nodo["tags_preview"] else "Unknown",
+            f"{nodo['dist_next']:.2f}"
+        ]
+        tabla.append(row)
+    return tabla
+
 def print_req_1(control):
     """
-        Función que imprime la solución del Requerimiento 1 en consola
+    Imprime el resultado del Requerimiento 1 usando tabulate.
+    El parámetro 'resultado' es el diccionario retornado por el modelo.
     """
-    # TODO: Imprimir el resultado del requerimiento 1
-    pass
+    lat_or=float(input("introduzca la latitud de origen: "))
+    lon_or=float(input("introduzca la longitud de origen: "))
+    lat_dest=float(input("introduzca la latitud de destino: "))
+    lon_dest=float(input("introduzca la longitud de destino: "))
+    grulla_id=input("introduzca ID del individuo: ")
+    resultado=lg.req_1(control,lat_or, lon_or, lat_dest, lon_dest, grulla_id)
+    
+    if "error" in resultado:
+        print("\n  No se pudo encontrar un camino válido:")
+        print("   →", resultado["error"])
+        return
+
+    print("\n====== REQUERIMIENTO 1: Camino migratorio del individuo ======\n")
+
+    print(f"Primer nodo donde se detectó al individuo:")
+    print(f" → Nodo: {resultado['nodo_inicio_grulla']}\n")
+
+    print(f"Distancia total del camino: {resultado['distancia_total']:.2f} km")
+    print(f"Total de puntos en la ruta: {resultado['total_puntos']}\n")
+
+    print("===== Primeros 5 puntos de la ruta =====")
+    print(tabulate(_convert_nodos_tabla(resultado["primeros_5"]),
+                   headers=["Nodo", "Latitud", "Longitud", "#Grullas", "Tags (3 primeros / 3 últimos)", "Distancia al siguiente (km)"],
+                   tablefmt="grid"))
+
+    print("\n===== Últimos 5 puntos de la ruta =====")
+    print(tabulate(_convert_nodos_tabla(resultado["ultimos_5"]),
+                   headers=["Nodo", "Latitud", "Longitud", "#Grullas", "Tags (3 primeros / 3 últimos)", "Distancia al siguiente (km)"],
+                   tablefmt="grid"))
+
+    print("\n===============================================================\n")
 
 
 def print_req_2(control):
