@@ -51,6 +51,7 @@ def load_data(catalog, filename):
 
             row = {k.strip(): v for k, v in row.items() if k is not None}
 
+            # Timestamp
             fecha_str = row["timestamp"].strip()
             try:
                 fecha = datetime.strptime(fecha_str, "%Y-%m-%d %H:%M:%S.%f")
@@ -205,13 +206,14 @@ def load_data(catalog, filename):
     catalog["nodos_por_tag"] = nodos_por_tag
 
 def nodo_mas_cercano(grafo, lat, lon):
-    vertices = G.vertices(grafo)  # ESTA SÍ devuelve una lista EDA
-    
+    vertices = G.vertices(grafo)  # lista EDA (array_list)
+
     best_node = None
     best_dist = float("inf")
 
-    for i in vertices["elements"]:
-        vid = i
+    # recorrer usando la API de array_list
+    for idx in range(lt.size(vertices)):
+        vid = lt.get_element(vertices, idx)
         info = G.get_vertex_information(grafo, vid)
         d = haversine(lat, lon, info["lat"], info["lon"])
 
@@ -224,68 +226,179 @@ def nodo_mas_cercano(grafo, lat, lon):
 def nodos_visitados_por_grulla(lista_eventos, grulla_id, mapa_eventos):
     nodos = []
     size = lt.size(lista_eventos)
-
-    for i in range(0, size-1):
+    for i in range(0, size):
         e = lt.get_element(lista_eventos, i)
         if e["tag_id"] == grulla_id:
             nodo = mp.get(mapa_eventos, e["id"])
-            nodos.append(nodo)
+            if nodo is not None:
+                nodos.append(nodo)
     return nodos
 
-def req_1(catalog, lat_or, lon_or, lat_dest, lon_dest, grulla_id):
 
+def req_1(catalog, lat_origen, lon_origen, lat_destino, lon_destino, individuo_id):
     """
-    Retorna el resultado del requerimiento 1
+    REQ 1: Detectar el camino usado por un individuo entre dos puntos migratorios.
+    DFS + aproximación geográfica con Haversine.
     """
-    grafo = catalog["grafo_distancia"]
-    lista_eventos = catalog["lista_eventos"]
-    mapa_eventos = catalog["mapa_eventos"]
 
-    nodo_origen = nodo_mas_cercano(grafo, lat_or, lon_or)
-    nodo_destino = nodo_mas_cercano(grafo, lat_dest, lon_dest)
-    nodos_grulla = nodos_visitados_por_grulla(lista_eventos, grulla_id, mapa_eventos)
-    if nodo_origen not in nodos_grulla:
-        return {"error": f"La grulla {grulla_id} no pasó por el nodo origen."}
+    grafo = catalog.get("grafo_distancia")
+    if not grafo:
+        return {"error": "Grafo vacío o no encontrado."}
 
-    search = dfs.dfs(grafo, nodo_origen)
+    vertices_grafo = G.vertices(grafo)
+    if not vertices_grafo or "elements" not in vertices_grafo:
+        return {"error": "No hay vértices en el grafo."}
 
-    if not dfs.has_path_to(search, nodo_destino):
-        
+    # ------------------------------
+    # Encontrar nodos más cercanos
+    # ------------------------------
+    nodo_origen = None
+    min_dist_origen = float('inf')
+    for v in vertices_grafo["elements"]:
+        info = G.get_vertex_information(grafo, v) or {}
+        lat_v = info.get("lat", None)
+        lon_v = info.get("lon", None)
+        if lat_v is None or lon_v is None:
+            continue
+        d = haversine(lat_origen, lon_origen, lat_v, lon_v)
+        if d < min_dist_origen:
+            min_dist_origen = d
+            nodo_origen = v
+
+    nodo_destino = None
+    min_dist_destino = float('inf')
+    for v in vertices_grafo["elements"]:
+        info = G.get_vertex_information(grafo, v) or {}
+        lat_v = info.get("lat", None)
+        lon_v = info.get("lon", None)
+        if lat_v is None or lon_v is None:
+            continue
+        d = haversine(lat_destino, lon_destino, lat_v, lon_v)
+        if d < min_dist_destino:
+            min_dist_destino = d
+            nodo_destino = v
+
+    if nodo_origen is None or nodo_destino is None:
+        return {"error": "No se pudo determinar nodo origen o destino."}
+
+    # ------------------------------
+    # DFS desde el nodo origen
+    # ------------------------------
+    visitados = mp.new_map(num_elements=G.order(grafo) or 1, load_factor=0.5)
+    stack = lt.new_list()
+    lt.add_last(stack, nodo_origen)
+    mp.put(visitados, nodo_origen, {'marked': True, 'edge_from': None})
+
+    while lt.size(stack) > 0:
+        actual = lt.get_element(stack, lt.size(stack)-1)
+        lt.delete_element(stack, lt.size(stack)-1)
+
+        if actual == nodo_destino:
+            break
+
+        adjs = G.adjacents(grafo, actual) or {"elements": []}
+        for w in adjs["elements"]:
+            if not mp.contains(visitados, w):
+                mp.put(visitados, w, {'marked': True, 'edge_from': actual})
+                lt.add_last(stack, w)
+
+    # Si destino no fue alcanzado
+    if not mp.contains(visitados, nodo_destino):
         return {"error": "No existe un camino viable entre los puntos."}
 
-    ruta = dfs.path_to(search, nodo_destino)
-    ruta = list(ruta)  # pila → lista
+    # ------------------------------
+    # Reconstruir camino origen → destino
+    # ------------------------------
+    camino = lt.new_list()
+    v = nodo_destino
+    while v is not None:
+        lt.add_first(camino, v)
+        info_v = mp.get(visitados, v)
+        if not info_v:
+            break
+        v = info_v.get('edge_from')
 
-    dist_total = 0
-    distancias = []
-    for i in range(len(ruta)-1):
-        A = G.get_vertex_information(grafo, ruta[i])
-        B = G.get_vertex_information(grafo, ruta[i+1])
-        d = haversine(A["lat"], A["lon"], B["lat"], B["lon"])
-        dist_total += d
-        distancias.append(d)
+    # ------------------------------
+    # Identificar primer nodo donde aparece el individuo
+    # ------------------------------
+    primer_nodo_individuo = "Desconocido"
 
-    detalles = []
-    for i, vid in enumerate(ruta):
-        info = G.get_vertex_information(grafo, vid)
-        tags = [lt.get_element(info["tags"], j)
-                for j in range(1, lt.size(info["tags"])+1)]
+    n_camino = lt.size(camino)
+    detalles = lt.new_list()
+    distancia_total = 0.0
 
-        detalles.append({
+    for i in range(n_camino):
+        vid = lt.get_element(camino, i)
+        info = G.get_vertex_information(grafo, vid) or {}
+
+        lat_v = info.get("lat", "Desconocido")
+        lon_v = info.get("lon", "Desconocido")
+        tags = info.get("tags", None)
+
+        if tags is None:
+            tags_list = lt.new_list()
+            tags_size = 0
+        else:
+            tags_list = tags
+            tags_size = lt.size(tags)
+
+        # Revisar si individuo está en este vértice
+        if primer_nodo_individuo == "Desconocido":
+            for t in tags_list["elements"]:
+                if t == individuo_id:
+                    primer_nodo_individuo = vid
+                    break
+
+        # Construir punto
+        punto = {
             "id": vid,
-            "lat": info["lat"],
-            "lon": info["lon"],
-            "num_grullas": len(tags),
-            "tags_preview": tags[:3] + tags[-3:] if len(tags) > 6 else tags,
-            "dist_next": distancias[i] if i < len(distancias) else 0
-        })
+            "lat": lat_v,
+            "lon": lon_v,
+            "num_individuos": tags_size,
+            "tags_prim": lt.new_list(),
+            "tags_ult": lt.new_list(),
+            "dist_next": "Desconocido"
+        }
 
+        # primeros 3 tags
+        lim_prim = min(3, tags_size)
+        for k in range(lim_prim):
+            lt.add_last(punto["tags_prim"], lt.get_element(tags_list, k))
+
+        # últimos 3 tags
+        ini_ult = tags_size - 3 if tags_size > 3 else 0
+        for k in range(ini_ult, tags_size):
+            lt.add_last(punto["tags_ult"], lt.get_element(tags_list, k))
+
+        # distancia al siguiente punto
+        if i < n_camino - 1:
+            sig_vid = lt.get_element(camino, i+1)
+            info_sig = G.get_vertex_information(grafo, sig_vid) or {}
+            lat_s = info_sig.get("lat", None)
+            lon_s = info_sig.get("lon", None)
+            if lat_v != "Desconocido" and lon_v != "Desconocido" and lat_s is not None and lon_s is not None:
+                dnext = haversine(lat_v, lon_v, lat_s, lon_s)
+                punto["dist_next"] = dnext
+                distancia_total += dnext
+
+        lt.add_last(detalles, punto)
+
+    # ------------------------------
+    # primeros 5 / últimos 5
+    # ------------------------------
+    limite_mostrar = 5 if n_camino >= 5 else n_camino
+    primeros = lt.sub_list(detalles, 0, limite_mostrar)
+    ultimos = lt.sub_list(detalles, n_camino - limite_mostrar, limite_mostrar)
+
+    # ------------------------------
+    # respuesta final
+    # ------------------------------
     return {
-        "nodo_inicio_grulla": nodos_grulla[0], 
-        "distancia_total": dist_total,
-        "total_puntos": len(ruta),
-        "primeros_5": detalles[:5],
-        "ultimos_5": detalles[-5:]
+        "primer_nodo_individuo": primer_nodo_individuo,
+        "distancia_total": distancia_total,
+        "total_puntos": n_camino,
+        "primeros_5": primeros,
+        "ultimos_5": ultimos
     }
 
 
@@ -356,24 +469,23 @@ def req_3(catalog, grafo):
     answer = {
         "total_puntos": 0,
         "total_individuos": 0,
-        "primeros": lt.new_list(),
-        "ultimos": lt.new_list(),
+        "primeros": lt.new_list(),  
+        "ultimos": lt.new_list(),    
         "ruta_valida": True
     }
 
     orden = df.topological_sort(grafo)
-
-    if orden is None:
-        answer["ruta_valida"] = False
-        return answer
-
     n = lt.size(orden)
+
+  
     if n == 0:
         answer["ruta_valida"] = False
         return answer
 
+   
     answer["total_puntos"] = n
 
+  
     vertices = G.vertices(grafo)
     individuos = lt.new_list()
 
@@ -388,14 +500,12 @@ def req_3(catalog, grafo):
                 lt.add_last(individuos, tg)
 
     answer["total_individuos"] = lt.size(individuos)
-
     limite_prim = 5
     if n < 5:
         limite_prim = n
     for i in range(limite_prim):
         info_p = construir_info_punto(orden, grafo, i)
         lt.add_last(answer["primeros"], info_p)
-
     inicio_ult = 0
     if n > 5:
         inicio_ult = n - 5
@@ -404,7 +514,6 @@ def req_3(catalog, grafo):
         lt.add_last(answer["ultimos"], info_p)
 
     return answer
-
 def req_4(catalog):
     
     """
@@ -518,7 +627,106 @@ def req_5(catalog, punto_origen, punto_destino, grafo):
     
     return answer
 
+def req_6(control):
+    """
+    Identifica las subredes hídricas (componentes conectados) dentro del grafo.
+    Usa DFS para encontrar componentes conectados.
+    """
 
+    graph = control["grafo_agua"]  
+
+    if graph is None or len(graph) == 0:
+        return {"error": "No existe un grafo hídrico cargado."}
+
+    visited = set()
+    subredes = []
+    subred_id = 1
+    for nodo in graph.keys():
+        if nodo not in visited:
+
+            # Nueva subred
+            stack = [nodo]
+            componente = []
+
+            while stack:
+                actual = stack.pop()
+
+                if actual in visited:
+                    continue
+
+                visited.add(actual)
+                componente.append(actual)
+
+                for vecino in graph[actual]["adj"]:
+                    if vecino not in visited:
+                        stack.append(vecino)
+
+            subredes.append({
+                "id": subred_id,
+                "nodos": componente
+            })
+            subred_id += 1
+
+    if len(subredes) == 0:
+        return {"error": "No se identificó ninguna subred hídrica."}
+
+    subredes.sort(key=lambda x: (-len(x["nodos"]), x["id"]))
+
+    # Tomar las 5 más grandes
+    top5 = subredes[:5]
+
+    respuesta = {
+        "total_subredes": len(subredes),
+        "subredes_top": []
+    }
+
+    for sub in top5:
+        nodos = sub["nodos"]
+
+        # Extracción de datos geográficos
+        latitudes = []
+        longitudes = []
+        individuos = set()
+
+        for n in nodos:
+            nodo_info = graph[n]
+
+            latitudes.append(nodo_info.get("lat", "Unknown"))
+            longitudes.append(nodo_info.get("lon", "Unknown"))
+
+            # Agregar grullas (evitar duplicados)
+            for g in nodo_info.get("cranes", []):
+                individuos.add(g)
+
+        # Primeros y últimos 3 nodos
+        primeros_3 = nodos[:3]
+        ultimos_3 = nodos[-3:]
+
+        coords_primeros_3 = [(graph[n]["lat"], graph[n]["lon"]) for n in primeros_3]
+        coords_ultimos_3 = [(graph[n]["lat"], graph[n]["lon"]) for n in ultimos_3]
+
+        # Grullas
+        individuos = sorted(list(individuos))
+        primeros_3_individuos = individuos[:3]
+        ultimos_3_individuos = individuos[-3:]
+
+        respuesta["subredes_top"].append({
+            "id": sub["id"],
+            "total_nodos": len(nodos),
+            "lat_min": min(latitudes),
+            "lat_max": max(latitudes),
+            "lon_min": min(longitudes),
+            "lon_max": max(longitudes),
+            "primeros_3_nodos": primeros_3,
+            "ultimos_3_nodos": ultimos_3,
+            "coords_primeros_3": coords_primeros_3,
+            "coords_ultimos_3": coords_ultimos_3,
+            "total_individuos": len(individuos),
+            "primeros_3_individuos": primeros_3_individuos,
+            "ultimos_3_individuos": ultimos_3_individuos
+        })
+
+    return respuesta
 
 # Funciones para medir tiempos de ejecucion
 

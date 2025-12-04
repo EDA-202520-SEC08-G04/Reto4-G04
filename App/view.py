@@ -136,61 +136,77 @@ def print_data(control, id):
     #TODO: Realizar la función para imprimir un elemento
     pass
 
-def _convert_nodos_tabla(lista_nodos):
-    """
-    Convierte la lista de nodos del modelo al formato lista de listas
-    para que tabulate pueda imprimirla correctamente.
-    """
-    tabla = []
-    for nodo in lista_nodos:
-        row = [
-            nodo["id"],
-            nodo["lat"],
-            nodo["lon"],
-            nodo["num_grullas"],
-            ", ".join(nodo["tags_preview"]) if nodo["tags_preview"] else "Unknown",
-            f"{nodo['dist_next']:.2f}"
-        ]
-        tabla.append(row)
-    return tabla
 
 def print_req_1(control):
     """
-    Imprime el resultado del Requerimiento 1 usando tabulate.
-    El parámetro 'resultado' es el diccionario retornado por el modelo.
+    Imprime el resultado del Requerimiento 1 sin depender de _convert_nodos_tabla.
+    Se arma la tabla directamente dentro del print.
     """
-    lat_or=float(input("introduzca la latitud de origen: "))
-    lon_or=float(input("introduzca la longitud de origen: "))
-    lat_dest=float(input("introduzca la latitud de destino: "))
-    lon_dest=float(input("introduzca la longitud de destino: "))
-    grulla_id=input("introduzca ID del individuo: ")
-    resultado=lg.req_1(control,lat_or, lon_or, lat_dest, lon_dest, grulla_id)
-    
+
+    # ===== Entrada =====
+    lat_or = float(input("Introduzca la latitud de origen: "))
+    lon_or = float(input("Introduzca la longitud de origen: "))
+    lat_dest = float(input("Introduzca la latitud de destino: "))
+    lon_dest = float(input("Introduzca la longitud de destino: "))
+    grulla_id = input("Introduzca ID del individuo: ")
+
+    # ===== Llamado =====
+    resultado = lg.req_1(control, lat_or, lon_or, lat_dest, lon_dest, grulla_id)
+
     if "error" in resultado:
-        print("\n  No se pudo encontrar un camino válido:")
-        print("   →", resultado["error"])
+        print("\nNo se pudo encontrar un camino válido:")
+        print(" →", resultado["error"])
         return
 
-    print("\n====== REQUERIMIENTO 1: Camino migratorio del individuo ======\n")
+    print(f"\nPrimer nodo donde se detectó al individuo:")
+    print(f" → Nodo: {resultado.get('primer_nodo','Unknown')}")
 
-    print(f"Primer nodo donde se detectó al individuo:")
-    print(f" → Nodo: {resultado['nodo_inicio_grulla']}\n")
+    print(f"\nDistancia total del camino: {resultado['distancia_total']:.2f} km")
+    print(f"Total de puntos en la ruta: {resultado['total_puntos']}")
 
-    print(f"Distancia total del camino: {resultado['distancia_total']:.2f} km")
-    print(f"Total de puntos en la ruta: {resultado['total_puntos']}\n")
+    # Encabezados coherentes con los datos de REQ 1
+    headers = ["Nodo", "Latitud", "Longitud", "Distancia al siguiente (km)"]
 
-    print("===== Primeros 5 puntos de la ruta =====")
-    print(tabulate(_convert_nodos_tabla(resultado["primeros_5"]),
-                   headers=["Nodo", "Latitud", "Longitud", "#Grullas", "Tags (3 primeros / 3 últimos)", "Distancia al siguiente (km)"],
-                   tablefmt="grid"))
+    print("\n--- Primeros 5 puntos de la ruta ---")
+    
+    headers = ["Nodo", "Latitud", "Longitud", "# individuos", "3 primeros tags", "3 últimos tags", "Distancia al siguiente (km)"]
 
-    print("\n===== Últimos 5 puntos de la ruta =====")
-    print(tabulate(_convert_nodos_tabla(resultado["ultimos_5"]),
-                   headers=["Nodo", "Latitud", "Longitud", "#Grullas", "Tags (3 primeros / 3 últimos)", "Distancia al siguiente (km)"],
-                   tablefmt="grid"))
+    tabla_primeros = []
 
+    primeros = resultado["primeros_5"]["elements"]   # <<< ESTA ES LA LÍNEA CLAVE
+
+    for p in primeros:
+        fila = [
+            p["id"].strip(),
+            p["lat"],
+            p["lon"],
+            p["num_individuos"],
+            p["dist_next"]
+        ]
+        tabla_primeros.append(fila)
+
+    print(tabulate(tabla_primeros, headers=headers, tablefmt="grid"))
     print("\n===============================================================\n")
+    print("\n--- Últimos 5 puntos de la ruta ---")
+    
+    headers = ["Nodo", "Latitud", "Longitud", "# individuos", "3 primeros tags", "3 últimos tags", "Distancia al siguiente (km)"]
 
+    tabla_u = []
+
+    u = resultado["ultimos_5"]["elements"]   # <<< ESTA ES LA LÍNEA CLAVE
+
+    for i in u:
+        fila = [
+            i["id"].strip(),
+            i["lat"],
+            i["lon"],
+            i["num_individuos"],
+            i["dist_next"]
+        ]
+        tabla_primeros.append(fila)
+
+    print(tabulate(tabla_u, headers=headers, tablefmt="grid"))
+    print("\n===============================================================\n")
 
 def print_req_2(control):
     """
@@ -430,6 +446,7 @@ def print_req_6(control):
     Usa control (catálogo) para llamar logic.req_6.
     """
     resultado = lg.req_6(control)
+    print(resultado)
     if "error" in resultado:
         print("\n  ", resultado["error"])
         return
@@ -510,7 +527,7 @@ def main():
         elif int(inputs) == 5:
             print_req_5(control)
 
-        elif int(inputs) == 5:
+        elif int(inputs) == 6:
             print_req_6(control)
 
         elif int(inputs) == 7:
