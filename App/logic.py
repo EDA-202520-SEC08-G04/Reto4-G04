@@ -1,7 +1,8 @@
 import csv
 import math
 import os
-from datetime import datetime, time
+from datetime import datetime
+from time import time
 
 from DataStructures.List import array_list as lt
 from DataStructures.Map import map_linear_probing as mp
@@ -265,6 +266,7 @@ def nodo_mas_cercano(grafo, lat, lon):
         vid = i
         info = G.get_vertex_information(grafo, vid)
         d = haversine(lat, lon, info["lat"], info["lon"])
+
         if d < best_dist:
             best_dist = d
             best_node = vid
@@ -272,13 +274,14 @@ def nodo_mas_cercano(grafo, lat, lon):
     return best_node
 
 def nodos_visitados_por_grulla(lista_eventos, grulla_id, mapa_eventos):
-    nodos = lt.new_list()
+    nodos = []
     size = lt.size(lista_eventos)
+
     for i in range(0, size-1):
         e = lt.get_element(lista_eventos, i)
         if e["tag_id"] == grulla_id:
             nodo = mp.get(mapa_eventos, e["id"])
-            lt.add_last(nodos,nodo)
+            nodos.append(nodo)
     return nodos
 
 def req_1(catalog, lat_or, lon_or, lat_dest, lon_dest, grulla_id):
@@ -290,29 +293,21 @@ def req_1(catalog, lat_or, lon_or, lat_dest, lon_dest, grulla_id):
     lista_eventos = catalog["lista_eventos"]
     mapa_eventos = catalog["mapa_eventos"]
 
-    # 1. nodos más cercanos
     nodo_origen = nodo_mas_cercano(grafo, lat_or, lon_or)
     nodo_destino = nodo_mas_cercano(grafo, lat_dest, lon_dest)
-
-    # 2. nodos visitados por la grulla (para verificar si existe)
     nodos_grulla = nodos_visitados_por_grulla(lista_eventos, grulla_id, mapa_eventos)
-    if nodo_origen not in nodos_grulla["elements"]:
+    if nodo_origen not in nodos_grulla:
         return {"error": f"La grulla {grulla_id} no pasó por el nodo origen."}
 
-    # 3. DFS normal
-    
-    search = G.contains_vertex(grafo, nodo_origen)
-    print("--------------")
-    print(grafo)
-    print("--------------")
-    if not dfs.has_path_to( str(nodo_destino),grafo):
+    search = dfs.dfs(grafo, nodo_origen)
+
+    if not dfs.has_path_to(search, nodo_destino):
         
         return {"error": "No existe un camino viable entre los puntos."}
 
     ruta = dfs.path_to(search, nodo_destino)
     ruta = list(ruta)  # pila → lista
 
-    # 4. calcular distancias
     dist_total = 0
     distancias = []
     for i in range(len(ruta)-1):
@@ -322,7 +317,6 @@ def req_1(catalog, lat_or, lon_or, lat_dest, lon_dest, grulla_id):
         dist_total += d
         distancias.append(d)
 
-    # 5. preparar información detallada
     detalles = []
     for i, vid in enumerate(ruta):
         info = G.get_vertex_information(grafo, vid)
@@ -339,7 +333,7 @@ def req_1(catalog, lat_or, lon_or, lat_dest, lon_dest, grulla_id):
         })
 
     return {
-        "nodo_inicio_grulla": nodos_grulla[0],  # primer punto migratorio real de la grulla
+        "nodo_inicio_grulla": nodos_grulla[0], 
         "distancia_total": dist_total,
         "total_puntos": len(ruta),
         "primeros_5": detalles[:5],
@@ -378,62 +372,116 @@ def req_5(catalog):
     # TODO: Modificar el requerimiento 5
     pass
 
-def requerimiento_1(catalog, lat_or, lon_or, lat_dest, lon_dest, grulla_id):
-    grafo = catalog["grafo_distancia"]
-    lista_eventos = catalog["lista_eventos"]
-    mapa_eventos = catalog["mapa_eventos"]
+def req_6(control):
+    """
+    REQ 6: Identificar subredes hídricas aisladas (componentes conectados) dentro del nicho biológico.
+    Retorna un diccionario con toda la información requerida para impresión.
+    """
 
-    # 1. nodos más cercanos
-    nodo_origen = nodo_mas_cercano(grafo, lat_or, lon_or)
-    nodo_destino = nodo_mas_cercano(grafo, lat_dest, lon_dest)
+    grafo = control["graph"]  # grafo ya construido con puntos migratorios
 
-    # 2. nodos visitados por la grulla (para verificar si existe)
-    nodos_grulla = nodos_visitados_por_grulla(lista_eventos, grulla_id, mapa_eventos)
-    if nodo_origen not in nodos_grulla:
-        return {"error": f"La grulla {grulla_id} no pasó por el nodo origen."}
+    visitados = set()
+    subredes = []
+    id_subred = 1
 
-    # 3. DFS normal
-    search = dfs.DepthFirstSearch(grafo, nodo_origen)
+    # ---------------------------------------------------------------------
+    # 1. Identificación de subredes usando DFS (componentes conectados)
+    # ---------------------------------------------------------------------
+    for nodo in grafo.vertices():
 
-    if not dfs.has_path_to(search, nodo_destino):
-        return {"error": "No existe un camino viable entre los puntos."}
+        if nodo in visitados:
+            continue
 
-    ruta = dfs.path_to(search, nodo_destino)
-    ruta = list(ruta)  # pila → lista
+        # DFS desde nodo no visitado
+        dfs = dfs.dfs(grafo, nodo)
+        componente = dfs.vertices_reachable()  # conjunto/lista de nodos alcanzables
 
-    # 4. calcular distancias
-    dist_total = 0
-    distancias = []
-    for i in range(len(ruta)-1):
-        A = G.get_vertex_information(grafo, ruta[i])
-        B = G.get_vertex_information(grafo, ruta[i+1])
-        d = haversine(A["lat"], A["lon"], B["lat"], B["lon"])
-        dist_total += d
-        distancias.append(d)
+        # Marcar nodos visitados
+        for n in componente:
+            visitados.add(n)
 
-    # 5. preparar información detallada
-    detalles = []
-    for i, vid in enumerate(ruta):
-        info = G.get_vertex_information(grafo, vid)
-        tags = [lt.get_element(info["tags"], j)
-                for j in range(1, lt.size(info["tags"])+1)]
-
-        detalles.append({
-            "id": vid,
-            "lat": info["lat"],
-            "lon": info["lon"],
-            "num_grullas": len(tags),
-            "tags_preview": tags[:3] + tags[-3:] if len(tags) > 6 else tags,
-            "dist_next": distancias[i] if i < len(distancias) else 0
+        # Registrar subred
+        subredes.append({
+            "id": id_subred,
+            "nodos": list(componente)
         })
 
+        id_subred += 1
+
+    # Si no hay subredes
+    if len(subredes) == 0:
+        return {"error": "No se identificaron subredes hídricas en el nicho biológico."}
+
+    # ---------------------------------------------------------------------
+    # 2. Enriquecer datos de cada subred (latitudes, longitudes, individuos)
+    # ---------------------------------------------------------------------
+    for sub in subredes:
+
+        nodos = sub["nodos"]
+
+        lats, lons = [], []
+        individuos = set()
+
+        # extraer datos de cada nodo
+        for n in nodos:
+            data = grafo.get_vertex_data(n)
+
+            if data is not None:
+
+                lat = data.get("lat", "Unknown")
+                lon = data.get("lon", "Unknown")
+
+                if lat != "Unknown" and lon != "Unknown":
+                    lats.append(lat)
+                    lons.append(lon)
+
+                # Lista de grullas en este punto
+                tags = data.get("tags", [])
+                for t in tags:
+                    individuos.add(t)
+
+        # Ordenar nodos para primeros y últimos
+        nodos_ordenados = sorted(nodos)
+
+        # Guardar valores enriquecidos
+        sub["lat_min"] = min(lats) if lats else "Unknown"
+        sub["lat_max"] = max(lats) if lats else "Unknown"
+        sub["lon_min"] = min(lons) if lons else "Unknown"
+        sub["lon_max"] = max(lons) if lons else "Unknown"
+
+        sub["total_nodos"] = len(nodos)
+        sub["primeros_3_nodos"] = nodos_ordenados[:3]
+        sub["ultimos_3_nodos"] = nodos_ordenados[-3:]
+
+        # Obtener lat/lon de nodos requeridos
+        def coords(n):
+            d = grafo.get_vertex_data(n)
+            if d:
+                return d.get("lat", "Unknown"), d.get("lon", "Unknown")
+            return ("Unknown", "Unknown")
+
+        sub["coords_primeros_3"] = [coords(n) for n in sub["primeros_3_nodos"]]
+        sub["coords_ultimos_3"] = [coords(n) for n in sub["ultimos_3_nodos"]]
+
+        # Grullas en la subred
+        sub["total_individuos"] = len(individuos)
+        indiv_sorted = sorted(individuos)
+        sub["primeros_3_individuos"] = indiv_sorted[:3]
+        sub["ultimos_3_individuos"] = indiv_sorted[-3:]
+
+    # ---------------------------------------------------------------------
+    # 3. Ordenar subredes por tamaño y después por ID
+    # ---------------------------------------------------------------------
+    subredes_ordenadas = sorted(subredes, key=lambda s: (-s["total_nodos"], s["id"]))
+
+    # ---------------------------------------------------------------------
+    # 4. Retornar sólo top 5 (o todas si hay <5)
+    # ---------------------------------------------------------------------
     return {
-        "nodo_inicio_grulla": nodos_grulla[0],  # primer punto migratorio real de la grulla
-        "distancia_total": dist_total,
-        "total_puntos": len(ruta),
-        "primeros_5": detalles[:5],
-        "ultimos_5": detalles[-5:]
+        "total_subredes": len(subredes),
+        "subredes_top": subredes_ordenadas[:5]
     }
+
 
 # Funciones para medir tiempos de ejecucion
 

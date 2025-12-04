@@ -258,12 +258,61 @@ def print_req_5(control):
     pass
 
 
+
 def print_req_6(control):
     """
-        Función que imprime la solución del Requerimiento 6 en consola
+    Imprime los resultados del REQ.6: subredes hídricas aisladas.
+    Usa control (catálogo) para llamar logic.req_6.
     """
-    # TODO: Imprimir el resultado del requerimiento 6
-    pass
+    resultado = lg.req_6(control)
+    if "error" in resultado:
+        print("\n  ", resultado["error"])
+        return
+
+    print("\n====== REQUERIMIENTO 6: Subredes hídricas identificadas ======\n")
+    total = resultado.get("total_subredes", 0)
+    print(f"Total de subredes hídricas identificadas: {total}\n")
+
+    subredes = resultado.get("subredes_top", [])
+    if not subredes:
+        print("No se encontraron subredes para mostrar.")
+        return
+
+    for sub in subredes:
+        print(f"--- Subred hídrica ID: {sub.get('id', 'Unknown')} ---")
+        print(f"Cantidad de puntos migratorios: {sub.get('total_nodos', 'Unknown')}")
+        print(f"Latitud mínima: {sub.get('lat_min', 'Unknown')}, "
+              f"Latitud máxima: {sub.get('lat_max', 'Unknown')}")
+        print(f"Longitud mínima: {sub.get('lon_min', 'Unknown')}, "
+              f"Longitud máxima: {sub.get('lon_max', 'Unknown')}")
+        print(f"Total de individuos (grullas) que usan esta subred: {sub.get('total_individuos', 'Unknown')}")
+
+        nodos = []
+        for n in sub.get("primeros_3_nodos", []) + sub.get("ultimos_3_nodos", []):
+   
+            if n not in nodos:
+                nodos.append(n)
+
+        rows = []
+        for n in nodos:
+            lat, lon = "Unknown", "Unknown"
+            if n in sub.get("coords_primeros_3", []):
+                idx = sub["primeros_3_nodos"].index(n)
+                lat, lon = sub["coords_primeros_3"][idx]
+            elif n in sub.get("coords_ultimos_3", []):
+                idx = sub["ultimos_3_nodos"].index(n)
+                lat, lon = sub["coords_ultimos_3"][idx]
+
+            rows.append([n, lat, lon])
+
+        print("\nPuntos migratorios representativos (hasta 6):")
+        print(tabulate(rows, headers=["Nodo", "Latitud", "Longitud"], tablefmt="grid"))
+        print("\nGrullas que transitan la subred:")
+        individuos = sub.get("primeros_3_individuos", []) + sub.get("ultimos_3_individuos", [])
+     
+        individuos = list(dict.fromkeys(individuos))
+        print(" →", individuos)
+        print("\n-----------------------------------------------\n")
 
 # Se crea la lógica asociado a la vista
 control = new_logic()
