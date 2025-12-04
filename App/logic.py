@@ -9,6 +9,7 @@ from DataStructures.Graph import digraph as G
 from DataStructures.Graph import dfo as df
 from DataStructures.Graph import dijkstra as dih
 from DataStructures.Graph import dfs as dfs
+from DataStructures.Priority_queue import priority_queue as pq
 def haversine(lat1, lon1, lat2, lon2):
     """
     Distancia Haversine en km entre dos puntos (lat, lon).
@@ -320,12 +321,120 @@ def req_1(catalog, lat_or, lon_or, lat_dest, lon_dest, grulla_id):
     }
 
 
-def req_2(catalog):
+def req_2(catalog, lat_origen, lon_origen, lat_destino, lon_destino, radio_km):
     """
     Retorna el resultado del requerimiento 2
     """
-    # TODO: Modificar el requerimiento 2
-    pass
+    
+    grafo = catalog["grafo_distancia"]
+    vertices_grafo = G.vertices(grafo)
+
+    nodo_origen = None
+    min_dist_origen = float('inf')
+    for i in vertices_grafo["elements"]:
+        info = G.get_vertex_information(grafo, i)
+        d = haversine(lat_origen, lon_origen, info["lat"], info["lon"])
+        if d < min_dist_origen:
+            min_dist_origen = d
+            nodo_origen = i
+
+    nodo_destino = None
+    min_dist_destino = float('inf')
+    for i in vertices_grafo["elements"]:
+        info = G.get_vertex_information(grafo, i)
+        d = haversine(lat_destino, lon_destino, info["lat"], info["lon"])
+        if d < min_dist_destino:
+            min_dist_destino = d
+            nodo_destino = i
+
+    visitados = mp.new_map(num_elements=G.order(grafo), load_factor=0.5)
+    mp.put(visitados, nodo_origen, {'marked': True, 'edge_from': None})
+    cola = lt.new_list()
+    lt.add_last(cola, nodo_origen)
+
+    ultimo_dentro_radio = nodo_origen
+
+    while lt.size(cola) > 0:
+        actual = lt.get_element(cola, 0)
+        lt.delete_element(cola, 0)
+
+        info_actual = G.get_vertex_information(grafo, actual)
+        distancia_al_origen = haversine(lat_origen, lon_origen, info_actual["lat"], info_actual["lon"])
+        if distancia_al_origen <= radio_km:
+            ultimo_dentro_radio = actual
+
+        adjs = G.adjacents(grafo, actual)
+        for j in adjs["elements"]:
+            if not mp.contains(visitados, j):
+                lt.add_last(cola, j)
+                mp.put(visitados, j, {'marked': True, 'edge_from': actual})
+
+    if not mp.contains(visitados, nodo_destino):
+        return {"error": "No existe un camino viable entre los puntos."}
+
+    camino = lt.new_list()
+    v = nodo_destino
+    while v is not None:
+        lt.add_first(camino, v)
+        info_v = mp.get(visitados, v)
+        if info_v is None:
+            v = None
+        else:
+            v = info_v['edge_from']
+
+    distancia_total = 0
+    detalles = lt.new_list()
+    n_camino = lt.size(camino)
+
+    for i in range(n_camino):
+        vid = lt.get_element(camino, i)
+        info = G.get_vertex_information(grafo, vid)
+        punto = {
+            "id": vid,
+            "lat": info["lat"],
+            "lon": info["lon"],
+            "num_individuos": lt.size(info["tags"]),
+            "tags_prim": lt.new_list(),
+            "tags_ult": lt.new_list(),
+            "dist_next": "Desconocido"
+        }
+
+        if lt.size(info["tags"]) >= 3:
+            limite_prim = 3
+        else:
+            limite_prim = lt.size(info["tags"])
+        for k in range(limite_prim):
+            lt.add_last(punto["tags_prim"], lt.get_element(info["tags"], k))
+        inicio_ult = 0
+        if lt.size(info["tags"]) > 3:
+            inicio_ult = lt.size(info["tags"]) - 3
+        for k in range(inicio_ult, lt.size(info["tags"])):
+            lt.add_last(punto["tags_ult"], lt.get_element(info["tags"], k))
+
+        if i < n_camino - 1:
+            info_sig = G.get_vertex_information(grafo, lt.get_element(camino, i + 1))
+            punto["dist_next"] = haversine(info["lat"], info["lon"], info_sig["lat"], info_sig["lon"])
+            distancia_total += punto["dist_next"]
+
+        lt.add_last(detalles, punto)
+
+    if n_camino >= 5:
+        limite_mostrar = 5
+    else:
+        limite_mostrar = n_camino
+    primeros = lt.sub_list(detalles, 0, limite_mostrar)
+    ultimos = lt.sub_list(detalles, n_camino - limite_mostrar, limite_mostrar)
+
+    respuesta = {
+        "ultimo_nodo_dentro_radio": ultimo_dentro_radio,
+        "distancia_total": distancia_total,
+        "total_puntos": n_camino,
+        "primeros_5": primeros,
+        "ultimos_5": ultimos
+    }
+
+    return respuesta
+
 
 def cmp_tags(a, b):
     if a == b:
@@ -432,13 +541,113 @@ def req_3(catalog, grafo):
         lt.add_last(answer["ultimos"], info_p)
 
     return answer
-def req_4(catalog):
-    
+
+
+def req_4(catalog, lat_origen, lon_origen):
     """
     Retorna el resultado del requerimiento 4
     """
-    # TODO: Modificar el requerimiento 4
-    pass
+    
+    grafo = catalog["grafo_agua"]
+    vertices_grafo = G.vertices(grafo)
+
+    nodo_inicio = None
+    min_dist = float('inf')
+    for i in range(lt.size(vertices_grafo)):
+        vid = lt.get_element(vertices_grafo, i)
+        info = G.get_vertex_information(grafo, vid)
+        d = haversine(lat_origen, lon_origen, info["lat"], info["lon"])
+        if d < min_dist:
+            min_dist = d
+            nodo_inicio = vid
+
+    if nodo_inicio is None:
+        return {"error": "No se encontró un nodo cercano al origen."}
+
+    visitados = mp.new_map(lt.size(vertices_grafo), 0.5)
+    mp.put(visitados, nodo_inicio, True)
+
+    nodos_mst = lt.new_list()
+    lt.add_last(nodos_mst, nodo_inicio)
+
+    dist_total = 0.0
+    mst_edges = lt.new_list()
+
+    heap = pq.new_heap(is_min_pq=True)
+
+    adjs_inicio = G.adjacents(grafo, nodo_inicio)
+    for j in range(lt.size(adjs_inicio)):
+        vecino = lt.get_element(adjs_inicio, j)
+        peso = mp.get(G.get_vertex(grafo, nodo_inicio)["adjacents"], vecino)
+        pq.insert(heap, peso, (nodo_inicio, vecino))
+
+    while not pq.is_empty(heap):
+        arista = pq.remove(heap)
+        origen, destino = arista[0], arista[1]
+
+        if not mp.contains(visitados, destino):
+            mp.put(visitados, destino, True)
+            lt.add_last(nodos_mst, destino)
+            lt.add_last(mst_edges, (origen, destino))
+            dist_total += mp.get(G.get_vertex(grafo, origen)["adjacents"], destino)
+
+            adjs_destino = G.adjacents(grafo, destino)
+            for k in range(lt.size(adjs_destino)):
+                vecino = lt.get_element(adjs_destino, k)
+                if not mp.contains(visitados, vecino):
+                    peso = mp.get(G.get_vertex(grafo, destino)["adjacents"], vecino)
+                    pq.insert(heap, peso, (destino, vecino))
+
+    total_individuos = 0
+    detalles = lt.new_list()
+    for i in range(lt.size(nodos_mst)):
+        vid = lt.get_element(nodos_mst, i)
+        info = G.get_vertex_information(grafo, vid)
+        total_individuos += lt.size(info["tags"])
+
+        tags_prim = lt.new_list()
+        tags_ult = lt.new_list()
+        n_tags = lt.size(info["tags"])
+
+        limite_prim = min(3, n_tags)
+        for k in range(limite_prim):
+            tag = lt.get_element(info["tags"], k)
+            lt.add_last(tags_prim, tag)
+
+        inicio_ult = max(0, n_tags - 3)
+        for k in range(inicio_ult, n_tags):
+            tag = lt.get_element(info["tags"], k)
+            lt.add_last(tags_ult, tag)
+
+        dist_next = "Desconocido"
+        if i < lt.size(nodos_mst) - 1:
+            info_next = G.get_vertex_information(grafo, lt.get_element(nodos_mst, i + 1))
+            dist_next = haversine(info["lat"], info["lon"], info_next["lat"], info_next["lon"])
+
+        lt.add_last(detalles, {
+            "id": vid,
+            "lat": info["lat"],
+            "lon": info["lon"],
+            "num_individuos": lt.size(info["tags"]),
+            "tags_prim": tags_prim,
+            "tags_ult": tags_ult,
+            "dist_next": dist_next
+        })
+
+    n_puntos = lt.size(nodos_mst)
+    limite = min(5, n_puntos)
+    primeros_5 = lt.sub_list(detalles, 0, limite)
+    ultimos_5 = lt.sub_list(detalles, n_puntos - limite, limite)
+
+    return {
+        "total_puntos": n_puntos,
+        "total_individuos": total_individuos,
+        "distancia_total": dist_total,
+        "primeros_5": primeros_5,
+        "ultimos_5": ultimos_5
+    }
+
+
 def construir_punto_camino(camino, grafo, indice):
     v = lt.get_element(camino, indice)
     info = G.get_vertex_information(grafo, v)

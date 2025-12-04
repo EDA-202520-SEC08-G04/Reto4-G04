@@ -220,10 +220,73 @@ def print_req_1(control):
 
 def print_req_2(control):
     """
-        Función que imprime la solución del Requerimiento 2 en consola
+    Función que imprime la solución del Requerimiento 2 en consola
     """
-    # TODO: Imprimir el resultado del requerimiento 2
-    pass
+    print("\n" + "="*40)
+    print("        REQUERIMIENTO 2")
+    print("="*40)
+
+    lat_origen = float(input("Latitud del punto de origen: "))
+    lon_origen = float(input("Longitud del punto de origen: "))
+    lat_destino = float(input("Latitud del punto de destino: "))
+    lon_destino = float(input("Longitud del punto de destino: "))
+    radio = float(input("Radio del área de interés en km: "))
+
+    resultado = lg.req_2(control, lat_origen, lon_origen, lat_destino, lon_destino, radio)
+
+    if "error" in resultado:
+        print("\nNo se pudo encontrar un camino válido:")
+        print(" →", resultado["error"])
+        return
+
+    print(f"\nÚltimo nodo dentro del radio: {resultado['ultimo_nodo_dentro_radio']}")
+    print(f"Distancia total del camino: {resultado['distancia_total']:.2f} km")
+    print(f"Total de puntos en el camino: {resultado['total_puntos']}\n")
+
+    headers = ["Nodo", "Latitud", "Longitud", "# individuos", "3 primeros tags", "3 últimos tags", "Distancia al siguiente (km)"]
+
+    print("\n--- Primeros 5 puntos del camino ---")
+    tabla_primeros = []
+    limite_prim = 5
+    if lt.size(resultado["primeros_5"]) < 5:
+        limite_prim = lt.size(resultado["primeros_5"])
+    for i in range(limite_prim):
+        p = lt.get_element(resultado["primeros_5"], i)
+        fila = [
+            p["id"],
+            p["lat"],
+            p["lon"],
+            p["num_individuos"],
+            lista_to_string(p["tags_prim"]),
+            lista_to_string(p["tags_ult"]),
+            p["dist_next"]
+        ]
+        tabla_primeros.append(fila)
+
+    print(tabulate(tabla_primeros, headers=headers, tablefmt="grid"))
+
+    print("\n--- Últimos 5 puntos del camino ---")
+    tabla_ultimos = []
+    n_ult = lt.size(resultado["ultimos_5"])
+    inicio_ult = 0
+    if n_ult > 5:
+        inicio_ult = n_ult - 5
+    for i in range(inicio_ult, n_ult):
+        p = lt.get_element(resultado["ultimos_5"], i)
+        fila = [
+            p["id"],
+            p["lat"],
+            p["lon"],
+            p["num_individuos"],
+            lista_to_string(p["tags_prim"]),
+            lista_to_string(p["tags_ult"]),
+            p["dist_next"]
+        ]
+        tabla_ultimos.append(fila)
+
+    print(tabulate(tabla_ultimos, headers=headers, tablefmt="grid"))
+
+    print("\n===============================================================\n")
 
 
 def print_req_3(control):
@@ -236,10 +299,67 @@ def print_req_3(control):
 
 def print_req_4(control):
     """
-        Función que imprime la solución del Requerimiento 4 en consola
+    Función que imprime la solución del Requerimiento 4 en consola
     """
-    # TODO: Imprimir el resultado del requerimiento 4
-    pass
+    print("\n" + "="*40)
+    print("        REQUERIMIENTO 4")
+    print("="*40)
+
+    lat_origen = float(input("Latitud del punto de origen: "))
+    lon_origen = float(input("Longitud del punto de origen: "))
+
+    resultado = lg.req_4(control, lat_origen, lon_origen)
+
+    if "error" in resultado:
+        print("\nNo se pudo generar la ruta mínima de cobertura:")
+        print(" →", resultado["error"])
+        return
+
+    print(f"\nTotal de puntos en la ruta: {resultado['total_puntos']}")
+    print(f"Total de individuos cubiertos: {resultado['total_individuos']}")
+    print(f"Distancia total de la ruta: {resultado['distancia_total']:.2f} km\n")
+
+    headers = ["Nodo", "Latitud", "Longitud", "# individuos", "3 primeros tags", "3 últimos tags", "Distancia al siguiente (km)"]
+
+    # Primeros 5 puntos
+    print("--- Primeros 5 puntos ---")
+    tabla_primeros = []
+    limite_first = 5 if lt.size(resultado["primeros_5"]) > 5 else lt.size(resultado["primeros_5"])
+    for i in range(limite_first):
+        p = lt.get_element(resultado["primeros_5"], i)
+        fila = [
+            p["id"],
+            f"{p['lat']:.5f}",
+            f"{p['lon']:.5f}",
+            p["num_individuos"],
+            lista_to_string(p["tags_prim"]),
+            lista_to_string(p["tags_ult"]),
+            f"{p['dist_next']:.2f}" if isinstance(p['dist_next'], (float, int)) else p['dist_next']
+        ]
+        tabla_primeros.append(fila)
+    print(tabulate(tabla_primeros, headers=headers, tablefmt="grid"))
+
+    # Últimos 5 puntos
+    print("\n--- Últimos 5 puntos ---")
+    tabla_ultimos = []
+    n_ult = lt.size(resultado["ultimos_5"])
+    inicio_ult = 0 if n_ult <= 5 else n_ult - 5
+    for i in range(inicio_ult, n_ult):
+        p = lt.get_element(resultado["ultimos_5"], i)
+        fila = [
+            p["id"],
+            f"{p['lat']:.5f}",
+            f"{p['lon']:.5f}",
+            p["num_individuos"],
+            lista_to_string(p["tags_prim"]),
+            lista_to_string(p["tags_ult"]),
+            f"{p['dist_next']:.2f}" if isinstance(p['dist_next'], (float, int)) else p['dist_next']
+        ]
+        tabla_ultimos.append(fila)
+    print(tabulate(tabla_ultimos, headers=headers, tablefmt="grid"))
+
+    print("\n===============================================================\n")
+
 
 def lista_to_string(lista):
     n = lt.size(lista)
