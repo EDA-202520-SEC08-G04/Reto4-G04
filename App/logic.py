@@ -51,6 +51,7 @@ def load_data(catalog, filename):
 
             row = {k.strip(): v for k, v in row.items() if k is not None}
 
+            # Timestamp
             fecha_str = row["timestamp"].strip()
             try:
                 fecha = datetime.strptime(fecha_str, "%Y-%m-%d %H:%M:%S.%f")
