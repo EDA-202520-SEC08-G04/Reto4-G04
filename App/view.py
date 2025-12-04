@@ -1,8 +1,9 @@
 import sys
-from App import logic as lg   
+from App import logic as lg
 from tabulate import tabulate
 from DataStructures.Graph import digraph as G
 from DataStructures.List import array_list as lt
+
 
 def new_logic():
     """
@@ -10,10 +11,11 @@ def new_logic():
     """
     return lg.new_logic()
 
+
 def print_menu():
-    print("\n" + "="*40)
+    print("\n" + "=" * 40)
     print("       SISTEMA DE MIGRACIÓN DE AVES")
-    print("="*40)
+    print("=" * 40)
     print("0. Cargar información")
     print("1. Ejecutar Requerimiento 1")
     print("2. Ejecutar Requerimiento 2")
@@ -22,98 +24,143 @@ def print_menu():
     print("5. Ejecutar Requerimiento 5")
     print("6. Ejecutar Requerimiento 6")
     print("7. Salir")
-    print("="*40)
+    print("=" * 40)
+
+
+# ----------------------- helpers de impresión ----------------------- #
+
+def _tags_to_python_list(info):
+    """
+    Convierte info['tags'] (array_list) a lista normal de Python.
+    Si no hay 'tags', intenta usar 'tag_id'.
+    """
+    tags = info.get("tags", None)
+
+    # Caso normal: tags es un array_list {'elements': [...], 'size': n}
+    if tags is not None and "elements" in tags and "size" in tags:
+        res = []
+        n = lt.size(tags)
+        for i in range(n):
+            res.append(lt.get_element(tags, i))
+        return res
+
+    # Si no hay lista de tags pero sí un tag_id suelto
+    tag_id = info.get("tag_id", None)
+    if tag_id is not None:
+        return [tag_id]
+
+    # Si no hay información de grullas
+    return ["N/A"]
+
+
+def _cmp_vertex_fecha(v1, v2):
+    """
+    Criterio para ordenar vértices por fecha de creación ascendente.
+    """
+    return v1["creation_time"] < v2["creation_time"]
+
+
+# ----------------------- vista: carga de datos ----------------------- #
 
 def load_data(control):
     """
-    Carga los datos y muestra el reporte idéntico a la imagen
+    Carga los datos y muestra el reporte (estadísticas + primeros/últimos 5 nodos)
     """
     filename = input("Ingrese el nombre del archivo (Enter para default large): ")
     if not filename:
         filename = "1000_cranes_mongolia_large.csv"
-        
+
     # Llamada a la lógica
     lg.load_data(control, filename)
-    
-    # --- 1. ESTADÍSTICAS ---
+
+    # --- 1. ESTADÍSTICAS GENERALES ---
     grafo = control["grafo_distancia"]
     n_nodos = G.order(grafo)
     n_arcos = G.size(grafo)
-    
+
     n_events = control.get("total_eventos", 0)
     if n_events == 0:
         n_events = lt.size(control["lista_eventos"])
-        
+
     stats = [
         ["Total de grullas reconocidas:", control.get("total_grullas", 0)],
         ["Total de eventos cargados:", n_events],
         ["Total de nodos del grafo:", n_nodos],
         ["Total de arcos en el grafo:", n_arcos]
     ]
-    
-    print("\n" + "="*40)
+
+    print("\n" + "=" * 40)
     print("CARGA DE DATOS")
-    print("="*40)
-    # tablefmt="plain" para que se vea limpio como en la parte superior de tu imagen
-    print(tabulate(stats, tablefmt="plain")) 
-    print("="*40 + "\n")
+    print("=" * 40)
+    print(tabulate(stats, tablefmt="plain"))
+    print("=" * 40 + "\n")
 
     print("DETALLE DE NODOS (VÉRTICES)")
-    print("="*40)
-    
-    # Obtenemos vértices
-    vertices = G.vertices(grafo)
-    total = lt.size(vertices)
-    
-    headers = ["Identificador único", "Posición (lat, lon)", "Fecha de creación", "Grullas (tags)", "Conteo de eventos"]
+    print("=" * 40)
 
-    # --- 2. TABLA PRIMEROS 5 NODOS ---
+    # --- 2. OBTENER Y ORDENAR VÉRTICES POR FECHA ---
+    vertices_keys = G.vertices(grafo)
+    total_vertices = lt.size(vertices_keys)
+
+    # Construimos una lista con la información de cada vértice
+    lista_vertices_info = lt.new_list()
+    for i in range(total_vertices):
+        key = lt.get_element(vertices_keys, i)
+        info = G.get_vertex_information(grafo, key)
+        lt.add_last(lista_vertices_info, info)
+
+    # Ordenar por creation_time ascendente
+    lt.quick_sort(lista_vertices_info, _cmp_vertex_fecha)
+
+    headers = [
+        "Identificador único",
+        "Posición (lat, lon)",
+        "Fecha de creación",
+        "Grullas (tags)",
+        "Conteo de eventos"
+    ]
+
+    # --- 3. TABLA PRIMEROS 5 NODOS ---
     print("\n--- Primeros 5 Nodos ---")
     table_data_first = []
-    limite_first = 5 if total > 5 else total
-    
+    limite_first = 5 if total_vertices > 5 else total_vertices
+
     for i in range(limite_first):
-        key = lt.get_element(vertices, i)
-        info = G.get_vertex_information(grafo, key)
-        
+        info = lt.get_element(lista_vertices_info, i)
         pos_str = f"({info['lat']:.5f}, {info['lon']:.5f})"
-        fecha_str = str(info['creation_time'])
-        # Nota: Si tu lógica no guarda la lista de tags, mostrará vacío. 
-        # La imagen muestra [6235], asumimos que info tiene 'tags' o lo simulamos con tag_id inicial
-        tags = info.get('tags', [info.get('tag_id', 'N/A')]) 
-        
+        fecha_str = str(info["creation_time"])
+        tags_py = _tags_to_python_list(info)
+
         table_data_first.append([
-            info['id'], 
-            pos_str, 
-            fecha_str, 
-            tags, 
-            info['event_count']
+            info["id"],
+            pos_str,
+            fecha_str,
+            tags_py,
+            info["event_count"]
         ])
-        
+
     print(tabulate(table_data_first, headers=headers, tablefmt="grid"))
 
-    # --- 3. TABLA ÚLTIMOS 5 NODOS ---
-    if total > 5:
+    # --- 4. TABLA ÚLTIMOS 5 NODOS ---
+    if total_vertices > 5:
         print("\n--- Últimos 5 Nodos ---")
         table_data_last = []
-        start_index = total - 5
-        
-        for i in range(start_index, total):
-            key = lt.get_element(vertices, i)
-            info = G.get_vertex_information(grafo, key)
-            
+        start_index = total_vertices - 5
+
+        for i in range(start_index, total_vertices):
+            info = lt.get_element(lista_vertices_info, i)
             pos_str = f"({info['lat']:.5f}, {info['lon']:.5f})"
-            fecha_str = str(info['creation_time'])
-            tags = info.get('tags', [info.get('tag_id', 'N/A')])
-            
+            fecha_str = str(info["creation_time"])
+            tags_py = _tags_to_python_list(info)
+
             table_data_last.append([
-                info['id'], 
-                pos_str, 
-                fecha_str, 
-                tags, 
-                info['event_count']
+                info["id"],
+                pos_str,
+                fecha_str,
+                tags_py,
+                info["event_count"]
             ])
-            
+
         print(tabulate(table_data_last, headers=headers, tablefmt="grid"))
 
 def print_data(control, id):
